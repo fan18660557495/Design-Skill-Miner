@@ -1,0 +1,6 @@
+[miner]
+sessions_root = "/Users/yourname/.codex/sessions"
+cwd_prefix = "/Users/yourname/code/your-project"
+min_frequency = 2
+output_dir = "./out"
+

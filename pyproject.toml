@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "design-skill-miner"
+version = "0.3.0"
+description = "从本地会话导出中提炼重复设计讨论，并生成可编辑的技能草稿。"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "fan" }
+]
+keywords = ["design", "skills", "agent", "codex", "jsonl", "ux"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Environment :: Console",
+  "Environment :: Web Environment"
+]
+
+[project.scripts]
+design-skill-miner = "design_skill_miner.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

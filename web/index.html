@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Design Skill Miner</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="app-shell">
+        <aside class="flow-sidebar">
+          <div class="sidebar-head">
+            <h1>Design Skill Miner</h1>
+                      </div>
+
+          <nav id="flowSteps" class="step-list" aria-label="Workflow steps"></nav>
+        </aside>
+
+        <main class="stage-shell">
+          <div id="statusBanner" class="status-line is-hidden"></div>
+
+          <section id="projectStage" class="stage-panel">
+            <header class="stage-head">
+              <div>
+                <h2>选择项目</h2>
+              </div>
+            </header>
+
+            <div class="stage-block">
+              <label class="field">
+                <span>项目目录</span>
+                <div class="path-picker">
+                  <input id="cwdPrefixInput" type="text" placeholder="请选择项目目录" readonly />
+                  <button id="chooseProjectBtn" class="button button-primary" type="button">选择项目</button>
+                </div>
+              </label>
+
+              <div id="projectSummary" class="summary-card is-hidden"></div>
+            </div>
+
+            <footer class="stage-footer">
+              <div id="projectMeta" class="footnote is-hidden"></div>
+              <div class="footer-actions">
+                <button id="projectNextBtn" class="button button-primary" type="button">生成规则洞察</button>
+              </div>
+            </footer>
+          </section>
+
+          <section id="insightsStage" class="stage-panel">
+            <header class="stage-head">
+              <div>
+                <h2>规则洞察</h2>
+              </div>
+              <div class="stage-head-actions">
+                <button id="insightsRefreshBtn" class="button button-secondary" type="button">重新生成规则</button>
+              </div>
+            </header>
+
+            <div id="insightsSummary" class="summary-card is-hidden"></div>
+            <div id="insightsList" class="insight-list"></div>
+
+            <footer class="stage-footer">
+              <div class="footer-actions">
+                <button id="insightsBackBtn" class="button button-secondary" type="button">返回项目</button>
+                <button id="insightsNextBtn" class="button button-primary" type="button">生成 Skill 草稿</button>
+              </div>
+            </footer>
+          </section>
+
+          <section id="draftStage" class="stage-panel">
+            <header class="stage-head">
+              <div>
+                <h2>Skill 草稿</h2>
+              </div>
+              <div class="stage-head-actions">
+                <button id="draftRefreshBtn" class="button button-secondary" type="button">重新生成草稿</button>
+              </div>
+            </header>
+
+            <div id="draftSummary" class="summary-card is-hidden"></div>
+
+            <div class="draft-layout">
+              <aside id="draftFileList" class="draft-file-list is-hidden"></aside>
+
+              <article class="draft-preview">
+                <header class="draft-preview-head">
+                  <div class="draft-preview-meta">
+                    <strong id="draftActiveFileName"></strong>
+                    <span id="draftActiveFilePath"></span>
+                  </div>
+
+                  <div class="draft-preview-actions">
+                    <button id="draftReadModeBtn" class="button button-secondary button-compact is-active" type="button">阅读</button>
+                    <button id="draftEditModeBtn" class="button button-secondary button-compact" type="button">编辑</button>
+                    <button id="saveDraftFileBtn" class="button button-primary button-compact" type="button">保存</button>
+                  </div>
+                </header>
+
+                <div id="draftContent" class="reader-view"></div>
+                <textarea id="draftEditor" class="draft-editor is-hidden" spellcheck="false"></textarea>
+              </article>
+            </div>
+
+            <footer class="stage-footer">
+              <div class="footer-actions">
+                <button id="draftBackBtn" class="button button-secondary" type="button">返回规则洞察</button>
+                <button id="draftNextBtn" class="button button-primary" type="button">发布到暂存区</button>
+              </div>
+            </footer>
+          </section>
+
+          <section id="publishStage" class="stage-panel">
+            <header class="stage-head">
+              <div>
+                <h2>发布到暂存区</h2>
+              </div>
+            </header>
+
+            <div id="publishSummary" class="summary-card is-hidden"></div>
+
+            <div class="publish-grid">
+              <div class="summary-card">
+                <span class="summary-label">暂存目录</span>
+                <strong id="publishRootValue">首次发布时选择</strong>
+              </div>
+
+              <div class="summary-card">
+                <span class="summary-label">发布名称</span>
+                <strong id="publishNameValue">design-skill-draft</strong>
+              </div>
+            </div>
+
+            <footer class="stage-footer">
+              <div class="footer-actions">
+                <button id="publishBackBtn" class="button button-secondary" type="button">返回修改草稿</button>
+                <button id="changePublishRootBtn" class="button button-secondary" type="button">更换暂存目录</button>
+                <button id="publishNowBtn" class="button button-primary" type="button">发布到暂存区</button>
+              </div>
+            </footer>
+          </section>
+
+          <input id="sessionsRootInput" type="hidden" value="/Users/fan/.codex/sessions" />
+          <input id="minFrequencyInput" type="hidden" value="2" />
+          <input id="skillNameInput" type="hidden" value="design-skill-draft" />
+          <input id="draftOutDirInput" type="hidden" value="" />
+          <input id="publishRootInput" type="hidden" value="" />
+        </main>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
