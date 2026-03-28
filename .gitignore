@@ -8,3 +8,12 @@ out/
 build/
 dist/
 .venv/
+.design-skill-miner.toml
+.env
+.env.*
+*.log
+agent-out/
+skill-draft/
+mined-skill/
+.idea/
+.vscode/

@@ -4,8 +4,13 @@ const state = {
   currentStep: "project",
   selectedProject: "",
   currentProjectInfo: null,
+  activeRunId: "",
+  runStatus: null,
   insights: [],
   insightsStats: null,
+  reviewReport: null,
+  agentPlan: [],
+  llmRunInfo: null,
   draftFiles: [],
   draftDir: "",
   activeDraftFile: null,
@@ -19,6 +24,7 @@ const state = {
 const els = {
   flowSteps: document.getElementById("flowSteps"),
   statusBanner: document.getElementById("statusBanner"),
+  runStatusCard: document.getElementById("runStatusCard"),
   cwdPrefixInput: document.getElementById("cwdPrefixInput"),
   chooseProjectBtn: document.getElementById("chooseProjectBtn"),
   projectSummary: document.getElementById("projectSummary"),
@@ -26,6 +32,7 @@ const els = {
   projectNextBtn: document.getElementById("projectNextBtn"),
   insightsStage: document.getElementById("insightsStage"),
   insightsSummary: document.getElementById("insightsSummary"),
+  reviewSummary: document.getElementById("reviewSummary"),
   insightsList: document.getElementById("insightsList"),
   insightsBackBtn: document.getElementById("insightsBackBtn"),
   insightsRefreshBtn: document.getElementById("insightsRefreshBtn"),
@@ -53,10 +60,13 @@ const els = {
   skillNameInput: document.getElementById("skillNameInput"),
   draftOutDirInput: document.getElementById("draftOutDirInput"),
   publishRootInput: document.getElementById("publishRootInput"),
+  enableLlmInput: document.getElementById("enableLlmInput"),
   projectStage: document.getElementById("projectStage"),
   draftStage: document.getElementById("draftStage"),
   publishStage: document.getElementById("publishStage"),
 };
+
+let runPollTimer = null;
 
 function setStatus(message, tone = "") {
   if (!message) {
@@ -87,6 +97,14 @@ function getSkillName() {
 
 function getDraftOutDir() {
   return els.draftOutDirInput.value.trim();
+}
+
+function getRunTarget() {
+  return "draft";
+}
+
+function getEnableLlm() {
+  return els.enableLlmInput.checked;
 }
 
 function getPublishRoot() {
@@ -139,8 +157,13 @@ function setCurrentStep(step) {
 
 function resetForProjectChange() {
   state.currentProjectInfo = null;
+  state.activeRunId = "";
+  state.runStatus = null;
   state.insights = [];
   state.insightsStats = null;
+  state.reviewReport = null;
+  state.agentPlan = [];
+  state.llmRunInfo = null;
   state.draftFiles = [];
   state.draftDir = "";
   state.activeDraftFile = null;
@@ -148,6 +171,7 @@ function resetForProjectChange() {
   state.draftStale = false;
   state.publishedInfo = null;
   state.publishStale = false;
+  stopRunPolling();
 }
 
 function markDraftStale() {
@@ -249,6 +273,27 @@ function renderStages() {
   if (state.currentStep === "publish") els.publishStage.classList.add("is-active");
 }
 
+function renderRunStatusCard() {
+  const run = state.runStatus;
+  if (!run) {
+    els.runStatusCard.className = "summary-card is-hidden";
+    els.runStatusCard.innerHTML = "";
+    return;
+  }
+
+  const toneClass = run.status === "failed" ? " is-warning" : "";
+  const result = run.result || {};
+  const publishDir = result.published_info?.publish_dir;
+  els.runStatusCard.className = `summary-card${toneClass}`;
+  els.runStatusCard.innerHTML = `
+    <strong>智能体状态：${escapeHtml(run.status)}</strong>
+    <span class="muted">阶段 ${escapeHtml(run.stage)} · 目标 ${escapeHtml(run.target)} · 任务 ${escapeHtml(run.run_id.slice(0, 8))}</span>
+    <span>${escapeHtml(run.message || "")}</span>
+    ${publishDir ? `<span class="muted">发布目录：${escapeHtml(publishDir)}</span>` : ""}
+    ${run.error ? `<span class="muted">错误：${escapeHtml(run.error)}</span>` : ""}
+  `;
+}
+
 function renderProjectStage() {
   els.cwdPrefixInput.value = state.selectedProject || "";
   els.projectMeta.textContent = "";
@@ -266,13 +311,16 @@ function renderProjectStage() {
     <strong>${escapeHtml(info?.project_id || slugifyProject(state.selectedProject))}</strong>
     <span class="muted">${escapeHtml(String(info?.session_count || 0))} 个 session</span>
   `;
-  els.projectNextBtn.disabled = false;
+  els.projectNextBtn.disabled = state.runStatus?.status === "running";
+  els.projectNextBtn.textContent = state.runStatus?.status === "running" ? "智能体运行中…" : "启动智能体";
 }
 
 function renderInsightsStage() {
   if (!state.selectedProject) {
     els.insightsSummary.className = "summary-card is-hidden";
     els.insightsSummary.innerHTML = "";
+    els.reviewSummary.className = "summary-card is-hidden";
+    els.reviewSummary.innerHTML = "";
     els.insightsList.innerHTML = "";
     els.insightsNextBtn.disabled = true;
     els.insightsRefreshBtn.disabled = true;
@@ -282,6 +330,8 @@ function renderInsightsStage() {
   if (!state.insights.length) {
     els.insightsSummary.className = "summary-card is-hidden";
     els.insightsSummary.innerHTML = "";
+    els.reviewSummary.className = "summary-card is-hidden";
+    els.reviewSummary.innerHTML = "";
     els.insightsList.innerHTML = "";
     els.insightsNextBtn.disabled = true;
     els.insightsRefreshBtn.disabled = false;
@@ -296,9 +346,27 @@ function renderInsightsStage() {
     <strong>${escapeHtml(String(stats.insights_written || state.insights.length))} 条规则</strong>
     <span class="muted">${categoryCount} 个分类 · ${escapeHtml(String(stats.sessions_scanned || 0))} 个 session</span>
   `;
+  renderReviewSummary();
   els.insightsList.innerHTML = groupedInsights.map((group) => renderInsightGroup(group)).join("");
   els.insightsNextBtn.disabled = false;
   els.insightsRefreshBtn.disabled = false;
+}
+
+function renderReviewSummary() {
+  if (!state.reviewReport) {
+    els.reviewSummary.className = "summary-card is-hidden";
+    els.reviewSummary.innerHTML = "";
+    return;
+  }
+
+  const review = state.reviewReport;
+  const toneClass = review.score >= 0.75 ? "" : " is-warning";
+  const llmText = state.llmRunInfo?.llm_enabled ? ` · LLM ${state.llmRunInfo.llm_status}` : "";
+  els.reviewSummary.className = `summary-card${toneClass}`;
+  els.reviewSummary.innerHTML = `
+    <strong>审校分 ${escapeHtml(String(review.score))}</strong>
+    <span class="muted">通过 ${escapeHtml(String((review.approved_titles || []).length))} 条 · 拒绝 ${escapeHtml(String((review.rejected_titles || []).length))} 条${escapeHtml(llmText)}</span>
+  `;
 }
 
 function groupInsightsByCategory(insights) {
@@ -333,6 +401,7 @@ function renderInsightGroup(group) {
 }
 
 function renderInsightCard(insight) {
+  const reviewState = getInsightReviewState(insight.title);
   const rules = (insight.normalized_rules || insight.proposed_rules || [])
     .map((rule) => `<div class="insight-rule">${escapeHtml(rule)}</div>`)
     .join("");
@@ -346,6 +415,7 @@ function renderInsightCard(insight) {
         <h3>${escapeHtml(insight.title || "未命名规则")}</h3>
         <div class="insight-tags">
           <span class="tag">${escapeHtml(String(insight.frequency || 0))} 次</span>
+          ${reviewState ? `<span class="tag ${reviewState.className}">${escapeHtml(reviewState.label)}</span>` : ""}
         </div>
       </div>
       <p class="insight-summary">${escapeHtml(insight.summary || "无摘要")}</p>
@@ -359,6 +429,17 @@ function renderInsightCard(insight) {
       </div>
     </article>
   `;
+}
+
+function getInsightReviewState(title) {
+  if (!state.reviewReport) return null;
+  if ((state.reviewReport.rejected_titles || []).includes(title)) {
+    return { label: "审校拒绝", className: "tag-warning" };
+  }
+  if ((state.reviewReport.approved_titles || []).includes(title)) {
+    return { label: "审校通过", className: "tag-success" };
+  }
+  return null;
 }
 
 function renderDraftStage() {
@@ -778,24 +859,28 @@ async function scanInsights() {
   const payload = await requestJson(`/api/scan?${params.toString()}`);
   state.insights = payload.insights || [];
   state.insightsStats = payload.stats || null;
+  state.reviewReport = null;
+  state.agentPlan = [];
+  state.llmRunInfo = null;
   markDraftStale();
   state.currentStep = "insights";
   renderApp();
   setStatus("规则洞察已生成。", "success");
 }
 
-async function mineSkill() {
+async function startAgentRun() {
+  if (state.runStatus?.status === "running") {
+    setStatus("已有智能体任务在运行中。", "warning");
+    return;
+  }
   if (!state.selectedProject) {
     setStatus("先选择项目目录。", "warning");
     return;
   }
-  if (!state.insights.length) {
-    setStatus("请先生成规则洞察。", "warning");
-    return;
-  }
 
-  setStatus("正在生成 Skill 草稿…");
-  const payload = await requestJson("/api/mine-skill", {
+  persistSettings();
+  setStatus(getEnableLlm() ? "正在启动智能体，并启用 LLM 审校…" : "正在启动智能体…");
+  const payload = await requestJson("/api/agent-run/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -804,18 +889,76 @@ async function mineSkill() {
       min_frequency: getMinFrequency(),
       out_dir: getDraftOutDir() || undefined,
       skill_name: getSkillName(),
+      run_target: getRunTarget(),
+      publish_name: getSkillName(),
+      enable_llm: getEnableLlm(),
     }),
   });
 
-  state.draftFiles = payload.files || [];
-  state.draftDir = payload.draft_dir || "";
+  state.activeRunId = payload.run_id;
+  state.runStatus = payload;
+  state.currentStep = "insights";
+  renderApp();
+  startRunPolling();
+  setStatus("智能体已启动，正在后台连续执行。", "success");
+}
+
+function applyRunResult(result) {
+  if (!result) return;
+  state.insights = result.insights || [];
+  state.insightsStats = result.stats || null;
+  state.reviewReport = result.review || null;
+  state.agentPlan = result.plan || [];
+  state.llmRunInfo = {
+    llm_enabled: result.llm_enabled,
+    llm_status: result.llm_status,
+    llm_error: result.llm_error,
+  };
+  state.draftFiles = result.files || [];
+  state.draftDir = result.draft_dir || "";
   state.activeDraftFile = state.draftFiles[0] || null;
   state.draftMode = "read";
   state.draftStale = false;
-  state.publishStale = !!state.publishedInfo;
-  state.currentStep = "draft";
+  state.publishedInfo = result.published_info || null;
+  state.publishStale = false;
+  state.currentStep = result.published_info ? "publish" : "draft";
+}
+
+function startRunPolling() {
+  stopRunPolling();
+  runPollTimer = window.setInterval(() => {
+    pollRunStatus().catch((error) => {
+      setStatus(`读取运行状态失败：${error.message}`, "warning");
+    });
+  }, 1500);
+}
+
+function stopRunPolling() {
+  if (runPollTimer) {
+    window.clearInterval(runPollTimer);
+    runPollTimer = null;
+  }
+}
+
+async function pollRunStatus() {
+  if (!state.activeRunId) return;
+  const params = new URLSearchParams({ run_id: state.activeRunId });
+  const payload = await requestJson(`/api/agent-run?${params.toString()}`);
+  state.runStatus = payload;
+  if (payload.status === "completed") {
+    stopRunPolling();
+    applyRunResult(payload.result);
+    renderApp();
+    setStatus(payload.result?.llm_error ? `智能体执行完成，但 LLM 审校失败：${payload.result.llm_error}` : payload.message || "智能体执行完成。", payload.result?.llm_error ? "warning" : "success");
+    return;
+  }
+  if (payload.status === "failed") {
+    stopRunPolling();
+    renderApp();
+    setStatus(payload.error || payload.message || "智能体执行失败。", "warning");
+    return;
+  }
   renderApp();
-  setStatus("Skill 草稿已生成。", "success");
 }
 
 async function saveDraftFile() {
@@ -915,6 +1058,7 @@ function applyDraftMode() {
 }
 
 function renderApp() {
+  renderRunStatusCard();
   renderFlowSteps();
   renderStages();
   renderProjectStage();
@@ -947,6 +1091,11 @@ function loadPreferences() {
   const savedPublishRoot = localStorage.getItem("designSkillMiner.publishRoot") || "";
   state.publishRoot = savedPublishRoot;
   els.publishRootInput.value = savedPublishRoot;
+  els.enableLlmInput.checked = localStorage.getItem("designSkillMiner.enableLlm") === "true";
+}
+
+function persistSettings() {
+  localStorage.setItem("designSkillMiner.enableLlm", String(getEnableLlm()));
 }
 
 function escapeHtml(value) {
@@ -965,27 +1114,25 @@ els.chooseProjectBtn.addEventListener("click", () => {
 });
 
 els.projectNextBtn.addEventListener("click", () => {
-  scanInsights().catch((error) => {
-    setStatus(`生成规则洞察失败：${error.message}`, "warning");
+  startAgentRun().catch((error) => {
+    setStatus(`启动智能体失败：${error.message}`, "warning");
   });
 });
 
 els.insightsBackBtn.addEventListener("click", () => setCurrentStep("project"));
 els.insightsRefreshBtn.addEventListener("click", () => {
-  scanInsights().catch((error) => {
-    setStatus(`重新生成规则失败：${error.message}`, "warning");
+  startAgentRun().catch((error) => {
+    setStatus(`重新运行智能体失败：${error.message}`, "warning");
   });
 });
 els.insightsNextBtn.addEventListener("click", () => {
-  mineSkill().catch((error) => {
-    setStatus(`生成 Skill 草稿失败：${error.message}`, "warning");
-  });
+  setCurrentStep("draft");
 });
 
 els.draftBackBtn.addEventListener("click", () => setCurrentStep("insights"));
 els.draftRefreshBtn.addEventListener("click", () => {
-  mineSkill().catch((error) => {
-    setStatus(`重新生成草稿失败：${error.message}`, "warning");
+  startAgentRun().catch((error) => {
+    setStatus(`重新运行智能体失败：${error.message}`, "warning");
   });
 });
 els.draftNextBtn.addEventListener("click", () => setCurrentStep("publish"));

@@ -4,3 +4,16 @@ cwd_prefix = "/Users/yourname/code/your-project"
 min_frequency = 2
 output_dir = "./out"
 
+[agent]
+review_min_score = 0.6
+auto_prune = true
+
+[llm]
+enabled = false
+provider = "openai-compatible"
+base_url = "https://api.moonshot.ai/v1"
+model = "moonshot-v1-8k"
+api_key_env = "MOONSHOT_API_KEY"
+json_mode = true
+allow_insecure_tls = false
+timeout_seconds = 120

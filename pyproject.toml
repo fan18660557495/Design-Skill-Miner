@@ -12,6 +12,7 @@ license = { text = "MIT" }
 authors = [
   { name = "fan" }
 ]
+urls = { Homepage = "https://github.com/fan18660557495/Design-Skill-Miner", Repository = "https://github.com/fan18660557495/Design-Skill-Miner", Issues = "https://github.com/fan18660557495/Design-Skill-Miner/issues" }
 keywords = ["design", "skills", "agent", "codex", "jsonl", "ux"]
 classifiers = [
   "Development Status :: 3 - Alpha",

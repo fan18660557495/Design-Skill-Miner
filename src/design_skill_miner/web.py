@@ -6,8 +6,11 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from .config import MinerConfig
 from .web_support import (
     api_apply_skill,
+    api_agent_mine,
+    api_get_agent_run,
     api_list_directories,
     api_mine_skill,
     api_pick_directory,
@@ -15,6 +18,8 @@ from .web_support import (
     api_projects,
     api_save_draft_file,
     api_scan,
+    api_start_agent_run,
+    api_test_llm_connection,
 )
 
 
@@ -22,6 +27,8 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "web"
 
 
 class WebHandler(SimpleHTTPRequestHandler):
+    app_config = MinerConfig()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_ROOT), **kwargs)
 
@@ -43,6 +50,12 @@ class WebHandler(SimpleHTTPRequestHandler):
                 query = parse_qs(parsed.query)
                 path = _optional_value(query, "path")
                 return self._write_json(api_list_directories(Path(path) if path else None))
+            if parsed.path == "/api/agent-run":
+                query = parse_qs(parsed.query)
+                run_id = _optional_value(query, "run_id")
+                if not run_id:
+                    raise ValueError("Missing required query parameter: run_id")
+                return self._write_json(api_get_agent_run(run_id))
 
             if parsed.path in {"/", "/index.html"}:
                 self.path = "/index.html"
@@ -69,6 +82,112 @@ class WebHandler(SimpleHTTPRequestHandler):
                     out_dir=Path(out_dir) if isinstance(out_dir, str) and out_dir else None,
                     skill_name=skill_name,
                     description=description if isinstance(description, str) else None,
+                )
+                return self._write_json(result)
+
+            if parsed.path == "/api/agent-mine":
+                config = self.app_config
+                sessions_root = Path(_required_str(payload, "sessions_root"))
+                cwd_prefix = _optional_str(payload, "cwd_prefix")
+                min_frequency = int(payload.get("min_frequency", 2) or 2)
+                out_dir = payload.get("out_dir")
+                skill_name = payload.get("skill_name") or "design-skill-draft"
+                description = payload.get("description")
+                review_min_score = _payload_float(payload, "review_min_score", config.agent_review_min_score)
+                auto_prune = _payload_bool(payload, "auto_prune", config.agent_auto_prune)
+                enable_llm = _payload_bool(payload, "enable_llm", config.llm_enabled)
+                llm_provider = _optional_str(payload, "llm_provider") or config.llm_provider
+                llm_base_url = _optional_str(payload, "llm_base_url") or config.llm_base_url
+                llm_model = _optional_str(payload, "llm_model") or config.llm_model
+                llm_api_key_env = _optional_str(payload, "llm_api_key_env") or config.llm_api_key_env
+                llm_api_key = _optional_str(payload, "llm_api_key")
+                llm_json_mode = _payload_bool(payload, "llm_json_mode", config.llm_json_mode)
+                llm_allow_insecure_tls = _payload_bool(payload, "llm_allow_insecure_tls", config.llm_allow_insecure_tls)
+                llm_timeout_seconds = _payload_int(payload, "llm_timeout_seconds", config.llm_timeout_seconds)
+                result = api_agent_mine(
+                    sessions_root,
+                    cwd_prefix=cwd_prefix,
+                    min_frequency=min_frequency,
+                    out_dir=Path(out_dir) if isinstance(out_dir, str) and out_dir else None,
+                    skill_name=skill_name,
+                    description=description if isinstance(description, str) else None,
+                    review_min_score=review_min_score,
+                    auto_prune=auto_prune,
+                    enable_llm=enable_llm,
+                    llm_provider=llm_provider,
+                    llm_base_url=llm_base_url,
+                    llm_model=llm_model,
+                    llm_api_key_env=llm_api_key_env,
+                    llm_api_key=llm_api_key,
+                    llm_json_mode=llm_json_mode,
+                    llm_allow_insecure_tls=llm_allow_insecure_tls,
+                    llm_timeout_seconds=llm_timeout_seconds,
+                )
+                return self._write_json(result)
+
+            if parsed.path == "/api/agent-run/start":
+                config = self.app_config
+                sessions_root = Path(_required_str(payload, "sessions_root"))
+                cwd_prefix = _optional_str(payload, "cwd_prefix")
+                min_frequency = int(payload.get("min_frequency", 2) or 2)
+                out_dir = payload.get("out_dir")
+                skill_name = payload.get("skill_name") or "design-skill-draft"
+                description = payload.get("description")
+                review_min_score = _payload_float(payload, "review_min_score", config.agent_review_min_score)
+                auto_prune = _payload_bool(payload, "auto_prune", config.agent_auto_prune)
+                enable_llm = _payload_bool(payload, "enable_llm", config.llm_enabled)
+                llm_provider = _optional_str(payload, "llm_provider") or config.llm_provider
+                llm_base_url = _optional_str(payload, "llm_base_url") or config.llm_base_url
+                llm_model = _optional_str(payload, "llm_model") or config.llm_model
+                llm_api_key_env = _optional_str(payload, "llm_api_key_env") or config.llm_api_key_env
+                llm_api_key = _optional_str(payload, "llm_api_key")
+                llm_json_mode = _payload_bool(payload, "llm_json_mode", config.llm_json_mode)
+                llm_allow_insecure_tls = _payload_bool(payload, "llm_allow_insecure_tls", config.llm_allow_insecure_tls)
+                llm_timeout_seconds = _payload_int(payload, "llm_timeout_seconds", config.llm_timeout_seconds)
+                run_target = _optional_str(payload, "run_target") or "draft"
+                publish_root = _optional_str(payload, "publish_root")
+                publish_name = _optional_str(payload, "publish_name")
+                result = api_start_agent_run(
+                    sessions_root,
+                    cwd_prefix=cwd_prefix,
+                    min_frequency=min_frequency,
+                    out_dir=Path(out_dir) if isinstance(out_dir, str) and out_dir else None,
+                    skill_name=skill_name,
+                    description=description if isinstance(description, str) else None,
+                    review_min_score=review_min_score,
+                    auto_prune=auto_prune,
+                    enable_llm=enable_llm,
+                    llm_provider=llm_provider,
+                    llm_base_url=llm_base_url,
+                    llm_model=llm_model,
+                    llm_api_key_env=llm_api_key_env,
+                    llm_api_key=llm_api_key,
+                    llm_json_mode=llm_json_mode,
+                    llm_allow_insecure_tls=llm_allow_insecure_tls,
+                    llm_timeout_seconds=llm_timeout_seconds,
+                    run_target=run_target,
+                    publish_root=Path(publish_root) if publish_root else None,
+                    publish_name=publish_name,
+                )
+                return self._write_json(result)
+
+            if parsed.path == "/api/llm/test":
+                config = self.app_config
+                llm_provider = _optional_str(payload, "llm_provider") or config.llm_provider
+                llm_base_url = _optional_str(payload, "llm_base_url") or config.llm_base_url
+                llm_model = _optional_str(payload, "llm_model") or config.llm_model
+                llm_api_key_env = _optional_str(payload, "llm_api_key_env") or config.llm_api_key_env
+                llm_api_key = _optional_str(payload, "llm_api_key")
+                llm_allow_insecure_tls = _payload_bool(payload, "llm_allow_insecure_tls", config.llm_allow_insecure_tls)
+                llm_timeout_seconds = _payload_int(payload, "llm_timeout_seconds", min(config.llm_timeout_seconds, 30))
+                result = api_test_llm_connection(
+                    llm_provider=llm_provider,
+                    llm_base_url=llm_base_url,
+                    llm_model=llm_model,
+                    llm_api_key_env=llm_api_key_env,
+                    llm_api_key=llm_api_key,
+                    llm_allow_insecure_tls=llm_allow_insecure_tls,
+                    llm_timeout_seconds=llm_timeout_seconds,
                 )
                 return self._write_json(result)
 
@@ -119,7 +238,8 @@ class WebHandler(SimpleHTTPRequestHandler):
         return
 
 
-def serve(host: str = "127.0.0.1", port: int = 8765) -> None:
+def serve(host: str = "127.0.0.1", port: int = 8765, config: MinerConfig | None = None) -> None:
+    WebHandler.app_config = config or MinerConfig()
     server = ThreadingHTTPServer((host, port), WebHandler)
     print(f"Design Skill Miner Web UI running at http://{host}:{port}")
     print(f"Serving static files from {WEB_ROOT}")
@@ -163,3 +283,23 @@ def _required_str(payload: dict, key: str, *, allow_empty: bool = False) -> str:
 def _optional_str(payload: dict, key: str) -> str | None:
     value = payload.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _payload_bool(payload: dict, key: str, default: bool) -> bool:
+    if key not in payload:
+        return default
+    return bool(payload.get(key))
+
+
+def _payload_int(payload: dict, key: str, default: int) -> int:
+    if key not in payload:
+        return default
+    value = payload.get(key)
+    return int(value or default)
+
+
+def _payload_float(payload: dict, key: str, default: float) -> float:
+    if key not in payload:
+        return default
+    value = payload.get(key)
+    return float(value or default)

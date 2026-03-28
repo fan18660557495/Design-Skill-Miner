@@ -4,9 +4,11 @@ import argparse
 from pathlib import Path
 import sys
 
+from .agent import AgentSettings, run_agent_mine
 from .apply_skill import apply_draft_to_skill
 from .config import MinerConfig, load_config
 from .draft_skill import load_insights, write_skill_draft
+from .llm import DEFAULT_BASE_URL, LLMConfig
 from .indexer import build_index, summarize_projects, write_index
 from .pipeline import generate_insights
 from .report import write_reports
@@ -66,6 +68,25 @@ def build_parser() -> argparse.ArgumentParser:
     mine.add_argument("--skill-name", default="design-skill-draft")
     mine.add_argument("--description", default=None)
     mine.set_defaults(func=run_mine_skill)
+
+    agent_mine = subparsers.add_parser("agent-mine", help="Run the agent workflow with review and optional LLM enhancement.")
+    agent_mine.add_argument("sessions_root", type=Path)
+    agent_mine.add_argument("--cwd-prefix", default=None)
+    agent_mine.add_argument("--min-frequency", type=int, default=None)
+    agent_mine.add_argument("--out", type=Path, default=Path("./agent-out"))
+    agent_mine.add_argument("--skill-name", default="design-skill-draft")
+    agent_mine.add_argument("--description", default=None)
+    agent_mine.add_argument("--review-min-score", type=float, default=None)
+    agent_mine.add_argument("--disable-auto-prune", action="store_true")
+    agent_mine.add_argument("--enable-llm", action="store_true")
+    agent_mine.add_argument("--llm-provider", default=None)
+    agent_mine.add_argument("--llm-base-url", default=None)
+    agent_mine.add_argument("--llm-model", default=None)
+    agent_mine.add_argument("--llm-api-key-env", default=None)
+    agent_mine.add_argument("--disable-llm-json-mode", action="store_true")
+    agent_mine.add_argument("--allow-insecure-llm-tls", action="store_true")
+    agent_mine.add_argument("--llm-timeout-seconds", type=int, default=None)
+    agent_mine.set_defaults(func=run_agent_workflow)
 
     apply = subparsers.add_parser("apply-to-skill", help="Apply a generated draft into an existing skill directory.")
     apply.add_argument("draft_dir", type=Path)
@@ -139,6 +160,51 @@ def run_mine_skill(args: argparse.Namespace, config: MinerConfig) -> int:
     return 0
 
 
+def run_agent_workflow(args: argparse.Namespace, config: MinerConfig) -> int:
+    sessions_root = _resolve_path(args.sessions_root, config.sessions_root)
+    cwd_prefix = args.cwd_prefix or config.cwd_prefix
+    min_frequency = args.min_frequency or config.min_frequency
+    out_dir = args.out or _default_out(config, Path("./agent-out"))
+
+    agent_settings = AgentSettings(
+        review_min_score=args.review_min_score or config.agent_review_min_score,
+        auto_prune=not args.disable_auto_prune if args.disable_auto_prune else config.agent_auto_prune,
+    )
+    llm_config = LLMConfig(
+        enabled=args.enable_llm or config.llm_enabled,
+        provider=args.llm_provider or config.llm_provider,
+        base_url=args.llm_base_url or config.llm_base_url or DEFAULT_BASE_URL,
+        model=args.llm_model or config.llm_model,
+        api_key_env=args.llm_api_key_env or config.llm_api_key_env,
+        json_mode=not args.disable_llm_json_mode if args.disable_llm_json_mode else config.llm_json_mode,
+        allow_insecure_tls=args.allow_insecure_llm_tls or config.llm_allow_insecure_tls,
+        timeout_seconds=args.llm_timeout_seconds or config.llm_timeout_seconds,
+    )
+
+    result = run_agent_mine(
+        sessions_root,
+        cwd_prefix=cwd_prefix,
+        min_frequency=min_frequency,
+        out_dir=out_dir,
+        skill_name=args.skill_name,
+        description=args.description,
+        agent_settings=agent_settings,
+        llm_config=llm_config,
+    )
+    print_stats(result.stats)
+    print(f"Review score: {result.review.score}")
+    print(f"Approved insights: {len(result.review.approved_titles)}")
+    print(f"Rejected insights: {len(result.review.rejected_titles)}")
+    print(f"Draft dir: {result.draft_dir}")
+    print(f"Report dir: {result.report_dir}")
+    print(f"Run metadata: {result.files['run_json']}")
+    if result.llm_enabled:
+        print(f"LLM status: {result.llm_status}")
+        if result.llm_error:
+            print(f"LLM error: {result.llm_error}")
+    return 0
+
+
 def run_apply_to_skill(args: argparse.Namespace, _config: MinerConfig) -> int:
     outputs = apply_draft_to_skill(args.draft_dir, args.target_skill_dir, section_name=args.section_name)
     print(f"Applied draft to: {outputs['target_skill']}")
@@ -148,8 +214,8 @@ def run_apply_to_skill(args: argparse.Namespace, _config: MinerConfig) -> int:
     return 0
 
 
-def run_serve(args: argparse.Namespace, _config: MinerConfig) -> int:
-    serve(host=args.host, port=args.port)
+def run_serve(args: argparse.Namespace, config: MinerConfig) -> int:
+    serve(host=args.host, port=args.port, config=config)
     return 0
 
 

@@ -19,6 +19,7 @@
 
         <main class="stage-shell">
           <div id="statusBanner" class="status-line is-hidden"></div>
+          <div id="runStatusCard" class="summary-card is-hidden"></div>
 
           <section id="projectStage" class="stage-panel">
             <header class="stage-head">
@@ -28,12 +29,14 @@
             </header>
 
             <div class="stage-block">
-              <label class="field">
-                <span>项目目录</span>
-                <div class="path-picker">
-                  <input id="cwdPrefixInput" type="text" placeholder="请选择项目目录" readonly />
-                  <button id="chooseProjectBtn" class="button button-primary" type="button">选择项目</button>
-                </div>
+              <div class="path-picker">
+                <input id="cwdPrefixInput" type="text" placeholder="请选择项目目录" readonly />
+                <button id="chooseProjectBtn" class="button button-primary" type="button">选择项目</button>
+              </div>
+
+              <label class="toggle-row project-toggle">
+                <input id="enableLlmInput" type="checkbox" />
+                <span>启用润色</span>
               </label>
 
               <div id="projectSummary" class="summary-card is-hidden"></div>
@@ -42,7 +45,7 @@
             <footer class="stage-footer">
               <div id="projectMeta" class="footnote is-hidden"></div>
               <div class="footer-actions">
-                <button id="projectNextBtn" class="button button-primary" type="button">生成规则洞察</button>
+                <button id="projectNextBtn" class="button button-primary" type="button">启动智能体</button>
               </div>
             </footer>
           </section>
@@ -53,17 +56,18 @@
                 <h2>规则洞察</h2>
               </div>
               <div class="stage-head-actions">
-                <button id="insightsRefreshBtn" class="button button-secondary" type="button">重新生成规则</button>
+                <button id="insightsRefreshBtn" class="button button-secondary" type="button">重新运行智能体</button>
               </div>
             </header>
 
             <div id="insightsSummary" class="summary-card is-hidden"></div>
+            <div id="reviewSummary" class="summary-card is-hidden"></div>
             <div id="insightsList" class="insight-list"></div>
 
             <footer class="stage-footer">
               <div class="footer-actions">
                 <button id="insightsBackBtn" class="button button-secondary" type="button">返回项目</button>
-                <button id="insightsNextBtn" class="button button-primary" type="button">生成 Skill 草稿</button>
+                <button id="insightsNextBtn" class="button button-primary" type="button">查看 Skill 草稿</button>
               </div>
             </footer>
           </section>
@@ -74,7 +78,7 @@
                 <h2>Skill 草稿</h2>
               </div>
               <div class="stage-head-actions">
-                <button id="draftRefreshBtn" class="button button-secondary" type="button">重新生成草稿</button>
+                <button id="draftRefreshBtn" class="button button-secondary" type="button">重新运行智能体</button>
               </div>
             </header>
 
