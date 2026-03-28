@@ -1,12 +1,12 @@
-# Contributing
+# 贡献指南
 
 感谢你改进 `design-skill-miner`。
 
-这个项目目前优先关注三类贡献：
+当前项目优先欢迎这几类贡献：
 
 - 规则提炼质量：过滤、聚类、审校、草稿生成
 - 本地使用体验：CLI、Web UI、启动脚本
-- 开源可维护性：测试、文档、配置、安全边界
+- 开源可维护性：文档、配置、安全边界
 
 ## 开始之前
 
@@ -29,20 +29,19 @@ cp .design-skill-miner.toml.example .design-skill-miner.toml
 
 - Python 版本：`>= 3.11`
 - 优先保持标准库依赖，避免引入重型第三方包
-- 新增能力时，优先补最小测试
 - 文档、示例和代码行为保持一致
 - 不要提交本地会话数据、真实项目路径、真实密钥
+- 如果改了 Web 交互，请同时检查前端是否仍然保持简洁
 
 ## 提交前检查
 
-运行：
+至少运行：
 
 ```bash
-python3 -m unittest discover -s tests
 node --check web/app.js
 ```
 
-如果你改了 Web 接口，建议再手动跑一次本地服务：
+并建议手动验证一次本地服务：
 
 ```bash
 ./run-local.sh serve --host 127.0.0.1 --port 8765
@@ -52,7 +51,6 @@ node --check web/app.js
 
 - `src/design_skill_miner/`：核心逻辑
 - `web/`：前端资源
-- `tests/`：回归测试
 - `docs/`：架构和补充说明
 
 ## Pull Request 建议
@@ -61,7 +59,7 @@ PR 描述最好包含：
 
 - 改动动机
 - 主要行为变化
-- 测试结果
+- 手动验证结果
 - 是否涉及配置变更
 - 是否影响输出结构或草稿格式
 

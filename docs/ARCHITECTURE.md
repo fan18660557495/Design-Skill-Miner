@@ -1,33 +1,33 @@
-# Architecture
+# 架构说明
 
-## What This Project Does
+## 项目做什么
 
-`design-skill-miner` turns repeated design discussions from local session exports into editable skill drafts.
+`design-skill-miner` 会把本地会话导出中的重复设计讨论，整理成可编辑的 Skill 草稿。
 
-It is not a chat summarizer. It is a local agent workflow that:
+它不是聊天摘要器，而是一条本地 Agent 工作流，主要包含这些步骤：
 
-1. reads local session exports
-2. attributes sessions to a project
-3. filters design-relevant messages
-4. clusters repeated topics
-5. distills them into candidate rules
-6. reviews signal quality
-7. optionally uses an LLM to polish rule wording
-8. writes draft skill files
-9. optionally publishes the draft into a staging directory
+1. 读取本地会话导出
+2. 归属到项目
+3. 过滤设计相关消息
+4. 聚类重复主题
+5. 提炼候选规则
+6. 做质量审校
+7. 可选使用 LLM 做规则润色
+8. 生成 Skill 草稿
+9. 可选发布到暂存目录
 
-## End-to-End Flow
+## 端到端流程
 
 ```text
 sessions -> ingest -> attribution -> filter -> cluster -> distill
          -> review -> optional llm polish -> draft files -> publish
 ```
 
-## Main Layers
+## 主要分层
 
-### 1. Core mining pipeline
+### 1. 确定性提炼主流程
 
-These modules produce deterministic insights from local sessions:
+这些模块负责从本地会话中产出规则洞察：
 
 - `ingest.py`
 - `attribution.py`
@@ -36,26 +36,26 @@ These modules produce deterministic insights from local sessions:
 - `distill.py`
 - `pipeline.py`
 
-### 2. Agent workflow
+### 2. Agent 工作流
 
-These modules add execution planning, review, and optional LLM enhancement:
+这些模块负责执行编排、质量审校和可选 LLM 增强：
 
 - `agent.py`
 - `review.py`
 - `llm.py`
 
-### 3. Draft and publish
+### 3. 草稿与发布
 
-These modules transform insights into skill-shaped outputs:
+这些模块负责把洞察变成可落地的草稿结果：
 
 - `report.py`
 - `draft_skill.py`
 - `apply_skill.py`
 - `publish_skill.py`
 
-### 4. Interfaces
+### 4. 使用入口
 
-These modules expose the workflow to users:
+这些模块负责把能力暴露给用户：
 
 - `cli.py`
 - `web.py`
@@ -63,7 +63,7 @@ These modules expose the workflow to users:
 - `run_jobs.py`
 - `web/`
 
-## Repository Structure
+## 仓库结构
 
 ```text
 design-skill-miner/
@@ -89,7 +89,6 @@ design-skill-miner/
 │   ├── web.py
 │   └── web_support.py
 ├── web/
-├── tests/
 ├── docs/
 ├── README.md
 ├── CONTRIBUTING.md
@@ -97,9 +96,9 @@ design-skill-miner/
 └── CHANGELOG.md
 ```
 
-## Outputs
+## 输出结果
 
-Typical agent output:
+一次典型运行会生成：
 
 ```text
 agent-out/
@@ -114,12 +113,12 @@ agent-out/
     └── review.json
 ```
 
-## Configuration Model
+## 配置模型
 
-The project separates public and local configuration:
+项目把公开配置和本地配置分开：
 
-- commit `.design-skill-miner.toml.example`
-- keep `.design-skill-miner.toml` local only
-- keep real secrets in environment variables
+- 可以提交 `.design-skill-miner.toml.example`
+- `.design-skill-miner.toml` 只保留在本地
+- 真实密钥放在环境变量里
 
-This is important for open-source safety and reproducible local setup.
+这样做是为了保证开源仓库安全，同时让本地部署仍然可复现。

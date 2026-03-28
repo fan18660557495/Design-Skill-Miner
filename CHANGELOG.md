@@ -1,15 +1,16 @@
-# Changelog
+# 更新日志
 
-All notable changes to this project will be documented in this file.
+这个文件记录项目的重要变更。
 
 ## Unreleased
 
-- Added an agent workflow with deterministic review, optional LLM enhancement, and background job execution.
-- Added a simplified Web UI that focuses on project selection, run monitoring, draft editing, and staged publish.
-- Added local TOML-backed Web defaults so API, model, and review settings can stay on the server side.
-- Added LLM batch enhancement support and OpenAI-compatible provider integration.
-- Added open-source documentation for contribution, security, and architecture.
+- 新增 Agent 工作流，包含确定性审校、可选 LLM 润色和后台任务执行。
+- 新增并收敛了本地 Web UI，前台以项目选择和任务监控为主。
+- 增加基于本地 TOML 的 Web 默认配置，模型、鉴权和审校参数放到后端。
+- 增加 OpenAI-compatible LLM 接入和批量润色能力。
+- 补充开源仓库所需的贡献、安全和架构文档。
+- 移除公开仓库中的测试文件与测试样本。
 
 ## 0.3.0
 
-- Initial public CLI and Web workflow for mining repeated design discussions into skill drafts.
+- 初始公开版本，支持从本地会话中提炼重复设计讨论并生成 Skill 草稿。

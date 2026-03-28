@@ -170,7 +170,6 @@ agent-out/
 design-skill-miner/
 ├── src/design_skill_miner/   # Agent 核心
 ├── web/                      # 本地 Web UI
-├── tests/                    # 回归测试和 fixtures
 ├── docs/                     # 架构文档
 ├── README.md
 ├── CONTRIBUTING.md
@@ -194,10 +193,9 @@ design-skill-miner/
 
 ## 开发
 
-运行测试：
+静态检查：
 
 ```bash
-python3 -m unittest discover -s tests
 node --check web/app.js
 ```
 
