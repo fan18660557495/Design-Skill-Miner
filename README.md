@@ -343,6 +343,100 @@ design-skill-miner/
 - `draft_skill.py`：负责把结果写成草稿
 - `web.py` / `web_support.py`：负责让设计师用得起来
 
+## 按流程看，这些文件分别在做什么
+
+如果你想快速讲清楚这个仓库，可以不要一上来就按文件名背，而是按“流程”来记。
+
+### 1. 启动入口
+
+这一层回答的是：
+
+**用户怎么把这个 Agent 跑起来。**
+
+- CLI 入口：`cli.py`
+- 模块入口：`__main__.py`
+- Web 服务入口：`web.py`
+- 启动脚本：`run-local.sh`、`Start Design Skill Miner.command`、`start-design-skill-miner.sh`
+
+你可以把这一层理解成：
+
+**负责“怎么启动”。**
+
+### 2. 原始数据处理流程
+
+这一层回答的是：
+
+**它怎么从历史会话里拿到可分析的内容。**
+
+- 读取会话：`ingest.py`
+- 项目归属判断：`attribution.py`
+- 设计内容筛选：`filter.py`
+- 主题聚类：`cluster.py`
+- 规则提炼：`distill.py`
+- 主流程编排：`pipeline.py`
+
+这条线可以记成：
+
+**会话 -> 找项目 -> 筛设计内容 -> 找重复主题 -> 提炼成规则洞察**
+
+### 3. 智能体流程
+
+这一层回答的是：
+
+**为什么它不只是一个脚本，而是一个 Agent。**
+
+- Agent 编排：`agent.py`
+- 审校和裁剪：`review.py`
+- LLM 润色：`llm.py`
+
+这条线可以记成：
+
+**先跑稳定流程 -> 再做质量审校 -> 可选再润色 -> 最后生成草稿**
+
+如果面试时要讲“智能体体现在哪”，核心就讲这几个文件。
+
+### 4. 产出与落地流程
+
+这一层回答的是：
+
+**最后它会生成什么。**
+
+- 报告输出：`report.py`
+- 草稿生成：`draft_skill.py`
+- 合并到已有技能目录：`apply_skill.py`
+- 发布到暂存区：`publish_skill.py`
+
+这条线可以记成：
+
+**规则洞察 -> 报告 -> Skill 草稿 -> apply / publish**
+
+### 5. Web 交互流程
+
+这一层回答的是：
+
+**设计师在前台点按钮之后，后面发生了什么。**
+
+- 页面结构：`web/index.html`
+- 页面逻辑：`web/app.js`
+- 页面样式：`web/styles.css`
+- Web 接口：`web.py`
+- Web 操作层：`web_support.py`
+- 后台任务状态：`run_jobs.py`
+
+这条线可以记成：
+
+**前台点启动 -> 调后端接口 -> 后台任务运行 -> 前台轮询状态 -> 展示草稿**
+
+### 还有 3 个支撑文件
+
+- 配置读取：`config.py`
+- 数据结构定义：`models.py`
+- 项目索引与汇总：`indexer.py`
+
+如果你只想记一句最适合面试说的话，可以直接说：
+
+**这个项目从文件结构上分成 5 层：启动入口、原始数据处理、智能体编排、产出落地、Web 交互。核心分析链路在 `pipeline.py`，智能体能力主要在 `agent.py + review.py + llm.py`，用户使用链路主要在 `web.py + web_support.py + web/app.js`。**
+
 ## 配置方式
 
 复制示例配置：
