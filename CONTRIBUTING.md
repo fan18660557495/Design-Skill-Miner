@@ -38,7 +38,9 @@ cp .design-skill-miner.toml.example .design-skill-miner.toml
 至少运行：
 
 ```bash
+python3 -m compileall src/design_skill_miner
 node --check web/app.js
+rg -n "sk-[A-Za-z0-9]{10,}" .
 ```
 
 并建议手动验证一次本地服务：
@@ -62,6 +64,7 @@ PR 描述最好包含：
 - 手动验证结果
 - 是否涉及配置变更
 - 是否影响输出结构或草稿格式
+- 文档是否同步更新（README / docs / CHANGELOG）
 
 ## 安全
 

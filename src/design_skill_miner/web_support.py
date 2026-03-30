@@ -12,6 +12,7 @@ from .draft_skill import CATEGORY_FILES, write_skill_draft
 from .indexer import build_index, summarize_projects
 from .llm import DEFAULT_BASE_URL, LLMConfig
 from .llm import LLMClient, LLMError
+from .memory import AgentMemoryStore, resolve_memory_db_path
 from .pipeline import generate_insights
 from .publish_skill import publish_draft
 from .run_jobs import create_job, get_job, start_background_job, update_job
@@ -160,6 +161,7 @@ def api_agent_mine(
     llm_json_mode: bool = True,
     llm_allow_insecure_tls: bool = False,
     llm_timeout_seconds: int = 120,
+    progress_callback=None,
 ) -> dict:
     if out_dir is None:
         out_dir = Path(tempfile.mkdtemp(prefix="design-skill-miner-agent-"))
@@ -190,6 +192,7 @@ def api_agent_mine(
             allow_insecure_tls=llm_allow_insecure_tls,
             timeout_seconds=llm_timeout_seconds,
         ),
+        progress_callback=progress_callback,
     )
     insights = json.loads(Path(result.files["insights_json"]).read_text(encoding="utf-8"))
     return {
@@ -251,6 +254,19 @@ def api_start_agent_run(
     def _runner() -> None:
         try:
             update_job(job.run_id, status="running", stage="agent", message="正在运行智能体流程。")
+            def _progress(progress: dict) -> None:
+                latest_plan = progress.get("plan") or []
+                latest_step = latest_plan[-1] if latest_plan else {}
+                stage = latest_step.get("name") or "agent"
+                details = latest_step.get("details") or "正在运行智能体流程。"
+                update_job(
+                    job.run_id,
+                    status="running",
+                    stage=stage,
+                    message=details,
+                    result=progress,
+                )
+
             result = api_agent_mine(
                 sessions_root,
                 cwd_prefix=cwd_prefix,
@@ -273,6 +289,7 @@ def api_start_agent_run(
                 llm_json_mode=llm_json_mode,
                 llm_allow_insecure_tls=llm_allow_insecure_tls,
                 llm_timeout_seconds=llm_timeout_seconds,
+                progress_callback=_progress,
             )
 
             if run_target == "publish":
@@ -305,7 +322,10 @@ def api_start_agent_run(
             )
 
     start_background_job(job.run_id, _runner)
-    return job.to_dict()
+    payload = job.to_dict()
+    payload["publish_requires_approval"] = publish_requires_approval
+    payload["approve_publish"] = approve_publish
+    return payload
 
 
 def api_get_agent_run(run_id: str) -> dict:
@@ -369,7 +389,15 @@ def api_publish_draft(draft_dir: Path, publish_root: Path, publish_name: str | N
     }
 
 
-def api_save_draft_file(file_path: Path, content: str) -> dict:
+def api_save_draft_file(
+    file_path: Path,
+    content: str,
+    *,
+    project_id: str | None = None,
+    cwd_prefix: str | None = None,
+    memory_db_path: str | None = None,
+    feedback_note: str | None = None,
+) -> dict:
     requested = file_path.expanduser()
     target = requested.resolve()
     if not target.exists():
@@ -379,7 +407,34 @@ def api_save_draft_file(file_path: Path, content: str) -> dict:
     if target.suffix not in {".md", ".json"}:
         raise ValueError(f"Unsupported draft file type: {target.suffix}")
 
+    before_content = target.read_text(encoding="utf-8")
     target.write_text(content, encoding="utf-8")
+
+    resolved_project_id = project_id
+    if not resolved_project_id and cwd_prefix:
+        resolved_project_id = project_id_from_prefix(cwd_prefix)
+    memory_feedback = {
+        "stored": False,
+        "reason": "missing_project_id",
+        "tags": [],
+    }
+    if resolved_project_id:
+        try:
+            store = AgentMemoryStore(resolve_memory_db_path(memory_db_path))
+            memory_feedback = store.record_draft_feedback(
+                project_id=resolved_project_id,
+                file_path=str(target),
+                before_content=before_content,
+                after_content=content,
+                note=feedback_note,
+            )
+        except Exception as exc:  # noqa: BLE001
+            memory_feedback = {
+                "stored": False,
+                "reason": f"memory_error: {exc}",
+                "tags": [],
+            }
+
     display_root = requested.parent.parent if requested.parent.name == "references" else requested.parent
     return {
         "saved": True,
@@ -389,6 +444,7 @@ def api_save_draft_file(file_path: Path, content: str) -> dict:
             "relative_path": str(requested.relative_to(display_root)),
             "content": content,
         },
+        "memory_feedback": memory_feedback,
     }
 
 

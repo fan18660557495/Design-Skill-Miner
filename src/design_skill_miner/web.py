@@ -227,9 +227,21 @@ class WebHandler(SimpleHTTPRequestHandler):
                 result = api_pick_directory(title=title, start_path=Path(start_path) if start_path else None)
                 return self._write_json(result)
             if parsed.path == "/api/save-draft-file":
+                config = self.app_config
                 file_path = Path(_required_str(payload, "file_path"))
                 content = _required_str(payload, "content", allow_empty=True)
-                result = api_save_draft_file(file_path, content)
+                project_id = _optional_str(payload, "project_id")
+                cwd_prefix = _optional_str(payload, "cwd_prefix")
+                memory_db_path = _optional_str(payload, "memory_db_path") or config.agent_memory_db_path
+                feedback_note = _optional_str(payload, "feedback_note")
+                result = api_save_draft_file(
+                    file_path,
+                    content,
+                    project_id=project_id,
+                    cwd_prefix=cwd_prefix,
+                    memory_db_path=memory_db_path,
+                    feedback_note=feedback_note,
+                )
                 return self._write_json(result)
             if parsed.path == "/api/publish-draft":
                 draft_dir = Path(_required_str(payload, "draft_dir"))

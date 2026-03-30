@@ -345,6 +345,66 @@ textarea {
   min-width: 220px;
 }
 
+.process-panel {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: var(--surface-strong);
+  margin-bottom: 12px;
+}
+
+.process-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.process-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.process-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.process-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.process-grid > div {
+  display: grid;
+  gap: 4px;
+}
+
+.process-log {
+  margin: 0;
+  margin-top: 10px;
+  white-space: pre-wrap;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8f8f8;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+@media (max-width: 800px) {
+  .process-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .process-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .toggle-row input,
 .checkbox-card input {
   width: auto;

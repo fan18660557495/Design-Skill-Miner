@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -15,6 +16,8 @@ class ProjectMemoryProfile:
     preferred_skill_id: str | None
     blocked_titles: list[str]
     recent_reason_counts: dict[str, int]
+    draft_feedback_tags: dict[str, int]
+    recent_feedback_notes: list[str]
     total_runs: int
 
     def to_dict(self) -> dict:
@@ -61,6 +64,16 @@ class AgentMemoryStore:
                 "SELECT COUNT(*) FROM run_history WHERE project_id = ?",
                 (project_id,),
             ).fetchone()[0]
+            feedback_rows = conn.execute(
+                """
+                SELECT tags_json, note
+                FROM draft_feedback
+                WHERE project_id = ?
+                ORDER BY id DESC
+                LIMIT 60
+                """,
+                (project_id,),
+            ).fetchall()
 
         reason_counts = Counter()
         low_evidence_frequencies: list[int] = []
@@ -89,12 +102,22 @@ class AgentMemoryStore:
             )[0]
 
         blocked_titles = [str(row[0]) for row in blocked_rows]
+        feedback_tags = Counter()
+        recent_feedback_notes: list[str] = []
+        for row in feedback_rows:
+            for tag in _parse_feedback_tags(row[0]):
+                feedback_tags.update([tag])
+            note = row[1]
+            if isinstance(note, str) and note.strip():
+                recent_feedback_notes.append(note.strip())
         return ProjectMemoryProfile(
             project_id=project_id,
             suggested_min_frequency=int(suggested) if suggested else None,
             preferred_skill_id=str(preferred_skill) if preferred_skill else None,
             blocked_titles=blocked_titles,
             recent_reason_counts=dict(reason_counts),
+            draft_feedback_tags=dict(feedback_tags),
+            recent_feedback_notes=recent_feedback_notes[:8],
             total_runs=int(total_runs),
         )
 
@@ -178,6 +201,49 @@ class AgentMemoryStore:
                 (project_id, preferred_skill_id, suggested_min_frequency, now),
             )
 
+    def record_draft_feedback(
+        self,
+        *,
+        project_id: str,
+        file_path: str,
+        before_content: str,
+        after_content: str,
+        note: str | None = None,
+    ) -> dict:
+        before = before_content or ""
+        after = after_content or ""
+        if before == after:
+            return {"stored": False, "reason": "unchanged", "tags": []}
+
+        tags = _infer_feedback_tags(before, after)
+        payload = {
+            "stored": True,
+            "reason": "recorded",
+            "tags": tags,
+        }
+        now = _now()
+        trimmed_note = note.strip() if isinstance(note, str) and note.strip() else None
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO draft_feedback (
+                    ts, project_id, file_path, before_hash, after_hash,
+                    change_size, tags_json, note
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    project_id,
+                    file_path,
+                    _sha256(before),
+                    _sha256(after),
+                    _estimate_change_size(before, after),
+                    json.dumps(tags, ensure_ascii=False),
+                    trimmed_note,
+                ),
+            )
+        return payload
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA journal_mode=WAL")
@@ -215,6 +281,18 @@ class AgentMemoryStore:
                     suggested_min_frequency INTEGER,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS draft_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    before_hash TEXT NOT NULL,
+                    after_hash TEXT NOT NULL,
+                    change_size INTEGER NOT NULL,
+                    tags_json TEXT NOT NULL,
+                    note TEXT
+                );
                 """
             )
 
@@ -229,6 +307,68 @@ def _parse_reason_codes(raw: str | None) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _parse_feedback_tags(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str) and item]
+
+
+def _estimate_change_size(before: str, after: str) -> int:
+    before_set = {line.strip() for line in before.splitlines() if line.strip()}
+    after_set = {line.strip() for line in after.splitlines() if line.strip()}
+    added = after_set.difference(before_set)
+    removed = before_set.difference(after_set)
+    return len(added) + len(removed)
+
+
+def _infer_feedback_tags(before: str, after: str) -> list[str]:
+    before_set = {line.strip() for line in before.splitlines() if line.strip()}
+    after_set = {line.strip() for line in after.splitlines() if line.strip()}
+    added_lines = list(after_set.difference(before_set))
+    text = "\n".join(added_lines)
+    if not text:
+        return ["general_edit_preference"]
+
+    tags: list[str] = []
+    if _contains_any(text, ["例如", "比如", "示例", "case", "场景"]):
+        tags.append("prefer_examples")
+    if _contains_any(text, ["必须", "不要", "禁止", "不得", "应当", "约束", "规则"]):
+        tags.append("prefer_actionable_rules")
+    if _contains_any(text, ["适用", "不适用", "边界", "范围", "仅限", "例外"]):
+        tags.append("prefer_scope_boundaries")
+    if _contains_any(text, ["统一", "一致", "风格", "口径", "规范"]):
+        tags.append("prefer_consistency")
+    if _contains_any(text, ["精简", "简洁", "减少", "避免冗余"]):
+        tags.append("prefer_brevity")
+    if not tags:
+        tags.append("general_edit_preference")
+    return sorted(set(tags))
+
+
+def _contains_any(text: str, candidates: list[str]) -> bool:
+    lowered = text.lower()
+    for candidate in candidates:
+        if candidate.lower() in lowered:
+            return True
+    return False
+
+
+def _sha256(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def resolve_memory_db_path(configured: str | None) -> Path:
+    if configured:
+        return Path(configured)
+    return Path.cwd() / ".design-skill-miner" / "memory.db"
 
 
 def _now() -> str:

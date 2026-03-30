@@ -5,6 +5,11 @@ const state = {
   selectedProject: "",
   currentProjectInfo: null,
   selectedSkill: null,
+  goal: null,
+  cyclesUsed: 0,
+  finalDecision: "",
+  memoryProfile: null,
+  publishGateRequired: null,
   activeRunId: "",
   runStatus: null,
   insights: [],
@@ -35,6 +40,9 @@ const els = {
   insightsStage: document.getElementById("insightsStage"),
   insightsSummary: document.getElementById("insightsSummary"),
   reviewSummary: document.getElementById("reviewSummary"),
+  agentProcessPanel: document.getElementById("agentProcessPanel"),
+  agentProcessSummary: document.getElementById("agentProcessSummary"),
+  agentProcessLog: document.getElementById("agentProcessLog"),
   insightsList: document.getElementById("insightsList"),
   insightsBackBtn: document.getElementById("insightsBackBtn"),
   insightsRefreshBtn: document.getElementById("insightsRefreshBtn"),
@@ -164,6 +172,11 @@ function setCurrentStep(step) {
 function resetForProjectChange() {
   state.currentProjectInfo = null;
   state.selectedSkill = null;
+  state.goal = null;
+  state.cyclesUsed = 0;
+  state.finalDecision = "";
+  state.memoryProfile = null;
+  state.publishGateRequired = null;
   state.activeRunId = "";
   state.runStatus = null;
   state.insights = [];
@@ -295,6 +308,7 @@ function renderRunStatusCard() {
   els.runStatusCard.innerHTML = `
     <strong>智能体状态：${escapeHtml(run.status)}</strong>
     <span class="muted">阶段 ${escapeHtml(run.stage)} · 目标 ${escapeHtml(run.target)} · 任务 ${escapeHtml(run.run_id.slice(0, 8))}</span>
+    ${state.publishGateRequired === null ? "" : `<span class="muted">发布审批闸门：${state.publishGateRequired ? "开启" : "关闭"}</span>`}
     <span>${escapeHtml(run.message || "")}</span>
     ${publishDir ? `<span class="muted">发布目录：${escapeHtml(publishDir)}</span>` : ""}
     ${run.error ? `<span class="muted">错误：${escapeHtml(run.error)}</span>` : ""}
@@ -329,6 +343,7 @@ function renderInsightsStage() {
     els.insightsSummary.innerHTML = "";
     els.reviewSummary.className = "summary-card is-hidden";
     els.reviewSummary.innerHTML = "";
+    renderProcessPanel();
     els.insightsList.innerHTML = "";
     els.insightsNextBtn.disabled = true;
     els.insightsRefreshBtn.disabled = true;
@@ -340,6 +355,7 @@ function renderInsightsStage() {
     els.insightsSummary.innerHTML = "";
     els.reviewSummary.className = "summary-card is-hidden";
     els.reviewSummary.innerHTML = "";
+    renderProcessPanel();
     els.insightsList.innerHTML = "";
     els.insightsNextBtn.disabled = true;
     els.insightsRefreshBtn.disabled = false;
@@ -355,6 +371,7 @@ function renderInsightsStage() {
     <span class="muted">${categoryCount} 个分类 · ${escapeHtml(String(stats.sessions_scanned || 0))} 个 session</span>
   `;
   renderReviewSummary();
+  renderProcessPanel();
   els.insightsList.innerHTML = groupedInsights.map((group) => renderInsightGroup(group)).join("");
   els.insightsNextBtn.disabled = false;
   els.insightsRefreshBtn.disabled = false;
@@ -378,6 +395,46 @@ function renderReviewSummary() {
     <strong>审校分 ${escapeHtml(String(review.score))}</strong>
     <span class="muted">通过 ${escapeHtml(String((review.approved_titles || []).length))} 条 · 拒绝 ${escapeHtml(String((review.rejected_titles || []).length))} 条${escapeHtml(llmText)}${escapeHtml(skillText)}</span>
   `;
+}
+
+function renderProcessPanel() {
+  if (!state.selectedProject) {
+    els.agentProcessPanel.className = "process-panel is-hidden";
+    els.agentProcessSummary.innerHTML = "";
+    els.agentProcessLog.textContent = "";
+    return;
+  }
+
+  const goalTitle = state.goal?.title || "未提供";
+  const cycleText = state.goal?.max_cycles ? `${state.cyclesUsed || 0}/${state.goal.max_cycles}` : "未提供";
+  const finalDecision = state.finalDecision || "running";
+  const primaryReason = state.reviewReport?.primary_reason || "none";
+  const feedbackTags = state.memoryProfile?.draft_feedback_tags || {};
+  const feedbackTagSummary = Object.entries(feedbackTags)
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+    .slice(0, 3)
+    .map(([name, count]) => `${name}:${count}`)
+    .join("|") || "none";
+  const memorySummary = state.memoryProfile
+    ? `runs=${state.memoryProfile.total_runs || 0}, preferred_skill=${state.memoryProfile.preferred_skill_id || "none"}, suggested_min_frequency=${state.memoryProfile.suggested_min_frequency || "none"}, feedback_tags=${feedbackTagSummary}`
+    : "none";
+  const gateState = state.publishGateRequired === null ? "unknown" : (state.publishGateRequired ? "enabled" : "disabled");
+  const planText = state.agentPlan.length
+    ? state.agentPlan.map((step, index) => `${index + 1}. [${step.status}] ${step.name} - ${step.details || ""}`).join("\n")
+    : "暂无步骤详情（请先点击“启动智能体”）。";
+
+  els.agentProcessPanel.className = "process-panel";
+  els.agentProcessSummary.innerHTML = `
+    <div class="process-grid">
+      <div><span class="summary-label">目标</span><strong>${escapeHtml(goalTitle)}</strong></div>
+      <div><span class="summary-label">循环</span><strong>${escapeHtml(cycleText)}</strong></div>
+      <div><span class="summary-label">最终决策</span><strong>${escapeHtml(finalDecision)}</strong></div>
+      <div><span class="summary-label">主要风险</span><strong>${escapeHtml(primaryReason)}</strong></div>
+      <div><span class="summary-label">记忆摘要</span><strong>${escapeHtml(memorySummary)}</strong></div>
+      <div><span class="summary-label">发布闸门</span><strong>${escapeHtml(gateState)}</strong></div>
+    </div>
+  `;
+  els.agentProcessLog.textContent = planText;
 }
 
 function groupInsightsByCategory(insights) {
@@ -917,6 +974,9 @@ async function startAgentRun() {
 
   state.activeRunId = payload.run_id;
   state.runStatus = payload;
+  state.publishGateRequired = typeof payload.publish_requires_approval === "boolean"
+    ? payload.publish_requires_approval
+    : state.publishGateRequired;
   state.currentStep = "insights";
   renderApp();
   startRunPolling();
@@ -928,6 +988,10 @@ function applyRunResult(result) {
   state.insights = result.insights || [];
   state.insightsStats = result.stats || null;
   state.reviewReport = result.review || null;
+  state.goal = result.goal || null;
+  state.cyclesUsed = Number.isFinite(Number(result.cycles_used)) ? Number(result.cycles_used) : 0;
+  state.finalDecision = result.final_decision || "";
+  state.memoryProfile = result.memory_profile || null;
   state.agentPlan = result.plan || [];
   state.selectedSkill = result.selected_skill || null;
   state.llmRunInfo = {
@@ -942,7 +1006,19 @@ function applyRunResult(result) {
   state.draftStale = false;
   state.publishedInfo = result.published_info || null;
   state.publishStale = false;
-  state.currentStep = result.published_info ? "publish" : "draft";
+  state.currentStep = result.published_info ? "publish" : "insights";
+}
+
+function applyRunProgress(result) {
+  if (!result) return;
+  state.goal = result.goal || state.goal;
+  state.cyclesUsed = Number.isFinite(Number(result.cycles_used)) ? Number(result.cycles_used) : state.cyclesUsed;
+  state.finalDecision = result.final_decision || state.finalDecision;
+  state.memoryProfile = result.memory_profile || state.memoryProfile;
+  state.agentPlan = result.plan || state.agentPlan;
+  state.selectedSkill = result.selected_skill || state.selectedSkill;
+  state.reviewReport = result.review || state.reviewReport;
+  state.insightsStats = result.stats || state.insightsStats;
 }
 
 function startRunPolling() {
@@ -966,6 +1042,9 @@ async function pollRunStatus() {
   const params = new URLSearchParams({ run_id: state.activeRunId });
   const payload = await requestJson(`/api/agent-run?${params.toString()}`);
   state.runStatus = payload;
+  if (payload.result) {
+    applyRunProgress(payload.result);
+  }
   if (payload.status === "completed") {
     stopRunPolling();
     applyRunResult(payload.result);
@@ -995,6 +1074,8 @@ async function saveDraftFile() {
     body: JSON.stringify({
       file_path: state.activeDraftFile.path,
       content: els.draftEditor.value,
+      project_id: state.currentProjectInfo?.project_id || undefined,
+      cwd_prefix: getCwdPrefix() || undefined,
     }),
   });
 
@@ -1004,6 +1085,16 @@ async function saveDraftFile() {
   state.draftMode = "read";
   state.publishStale = !!state.publishedInfo;
   renderApp();
+  const feedback = payload.memory_feedback || {};
+  if (feedback.stored) {
+    const tags = Array.isArray(feedback.tags) && feedback.tags.length ? `（学习标签：${feedback.tags.join(", ")}）` : "";
+    setStatus(`草稿已保存，已写入记忆${tags}。`, "success");
+    return;
+  }
+  if (feedback.reason === "unchanged") {
+    setStatus("草稿已保存（内容无变化，未新增学习样本）。", "success");
+    return;
+  }
   setStatus("草稿已保存。", "success");
 }
 
