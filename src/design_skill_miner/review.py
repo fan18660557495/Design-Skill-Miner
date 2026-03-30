@@ -37,6 +37,8 @@ class ReviewReport:
     rejected_titles: list[str] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
     auto_actions: list[str] = field(default_factory=list)
+    reason_counts: dict[str, int] = field(default_factory=dict)
+    primary_reason: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -46,6 +48,8 @@ class ReviewReport:
             "rejected_titles": self.rejected_titles,
             "recommendations": self.recommendations,
             "auto_actions": self.auto_actions,
+            "reason_counts": self.reason_counts,
+            "primary_reason": self.primary_reason,
         }
 
 
@@ -76,7 +80,8 @@ def review_insights(
             approved_titles.append(insight.title)
 
     score = compute_review_score(findings)
-    recommendations = build_recommendations(findings, score)
+    reason_counts, primary_reason = summarize_reason_codes(findings)
+    recommendations = build_recommendations(findings, score, primary_reason=primary_reason)
     auto_actions = build_auto_actions(findings)
     return ReviewReport(
         score=score,
@@ -85,6 +90,8 @@ def review_insights(
         rejected_titles=rejected_titles,
         recommendations=recommendations,
         auto_actions=auto_actions,
+        reason_counts=reason_counts,
+        primary_reason=primary_reason,
     )
 
 
@@ -184,10 +191,12 @@ def compute_review_score(findings: list[ReviewFinding]) -> float:
     return round(max(score, 0.0), 2)
 
 
-def build_recommendations(findings: list[ReviewFinding], score: float) -> list[str]:
+def build_recommendations(findings: list[ReviewFinding], score: float, *, primary_reason: str | None = None) -> list[str]:
     recommendations: list[str] = []
     codes = {finding.code for finding in findings}
 
+    if primary_reason:
+        recommendations.append(f"当前主要风险：{reason_label(primary_reason)}。")
     if "insufficient_evidence" in codes:
         recommendations.append("先提升重复阈值或补充更多会话，再决定是否发布。")
     if "generic_rule" in codes:
@@ -211,6 +220,33 @@ def build_auto_actions(findings: list[ReviewFinding]) -> list[str]:
     if "duplicate_rules" in codes:
         actions.append("deduplicate_rules")
     return actions
+
+
+def summarize_reason_codes(findings: list[ReviewFinding]) -> tuple[dict[str, int], str | None]:
+    counts: dict[str, int] = defaultdict(int)
+    weighted: dict[str, int] = defaultdict(int)
+    severity_weight = {"error": 3, "warning": 2, "info": 1}
+    for finding in findings:
+        counts[finding.code] += 1
+        weighted[finding.code] += severity_weight.get(finding.severity, 1)
+    if not weighted:
+        return {}, None
+    primary = sorted(
+        weighted.items(),
+        key=lambda item: (item[1], counts[item[0]], item[0]),
+        reverse=True,
+    )[0][0]
+    return dict(counts), primary
+
+
+def reason_label(code: str) -> str:
+    return {
+        "insufficient_evidence": "跨会话证据不足",
+        "missing_rules": "可执行规则缺失",
+        "low_confidence": "聚类置信度偏低",
+        "generic_rule": "规则表述过于抽象",
+        "duplicate_rules": "规则重复度过高",
+    }.get(code, code)
 
 
 def prune_low_signal_insights(

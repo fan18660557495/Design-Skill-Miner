@@ -1,0 +1,34 @@
+{
+  "skill_id": "component-pattern-skill",
+  "name": "组件规范沉淀 Skill",
+  "description": "用于整理按钮、卡片、输入框、导航、底部操作区等组件层默认做法。",
+  "when_to_use": [
+    "当重复讨论主要集中在组件样式、状态、间距和变体时使用",
+    "当你希望把局部设计判断沉淀成稳定组件规范时使用"
+  ],
+  "focus_categories": [
+    "component-patterns",
+    "style-system"
+  ],
+  "preferred_output_categories": [
+    "component-patterns",
+    "style-system",
+    "interaction-patterns"
+  ],
+  "review_min_score": 0.66,
+  "review_min_confidence": 0.64,
+  "review_min_evidence": 2,
+  "review_focus": [
+    "优先看组件是否可复用",
+    "优先看组件状态和视觉语言是否稳定"
+  ],
+  "draft_intro": "这个 skill 更适合沉淀组件写法、状态规则和样式系统的默认做法。",
+  "reading_guidance": [
+    "先看组件模式，再看样式系统，最后补交互模式",
+    "优先确认同类组件是否已经形成稳定变体和状态规则"
+  ],
+  "usage_boundaries": [
+    "如果讨论主要是页面整体结构问题，不要硬归到组件规范里",
+    "如果只是一次性的视觉修补，不要直接沉淀成组件规则"
+  ]
+}

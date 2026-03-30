@@ -93,8 +93,12 @@ class WebHandler(SimpleHTTPRequestHandler):
                 out_dir = payload.get("out_dir")
                 skill_name = payload.get("skill_name") or "design-skill-draft"
                 description = payload.get("description")
+                goal = _optional_str(payload, "goal")
+                skill_id = _optional_str(payload, "skill_id")
                 review_min_score = _payload_float(payload, "review_min_score", config.agent_review_min_score)
                 auto_prune = _payload_bool(payload, "auto_prune", config.agent_auto_prune)
+                max_cycles = _payload_int(payload, "max_cycles", config.agent_max_cycles)
+                memory_db_path = _optional_str(payload, "memory_db_path") or config.agent_memory_db_path
                 enable_llm = _payload_bool(payload, "enable_llm", config.llm_enabled)
                 llm_provider = _optional_str(payload, "llm_provider") or config.llm_provider
                 llm_base_url = _optional_str(payload, "llm_base_url") or config.llm_base_url
@@ -111,8 +115,12 @@ class WebHandler(SimpleHTTPRequestHandler):
                     out_dir=Path(out_dir) if isinstance(out_dir, str) and out_dir else None,
                     skill_name=skill_name,
                     description=description if isinstance(description, str) else None,
+                    goal=goal,
+                    skill_id=skill_id,
                     review_min_score=review_min_score,
                     auto_prune=auto_prune,
+                    max_cycles=max_cycles,
+                    memory_db_path=memory_db_path,
                     enable_llm=enable_llm,
                     llm_provider=llm_provider,
                     llm_base_url=llm_base_url,
@@ -133,8 +141,12 @@ class WebHandler(SimpleHTTPRequestHandler):
                 out_dir = payload.get("out_dir")
                 skill_name = payload.get("skill_name") or "design-skill-draft"
                 description = payload.get("description")
+                goal = _optional_str(payload, "goal")
+                skill_id = _optional_str(payload, "skill_id")
                 review_min_score = _payload_float(payload, "review_min_score", config.agent_review_min_score)
                 auto_prune = _payload_bool(payload, "auto_prune", config.agent_auto_prune)
+                max_cycles = _payload_int(payload, "max_cycles", config.agent_max_cycles)
+                memory_db_path = _optional_str(payload, "memory_db_path") or config.agent_memory_db_path
                 enable_llm = _payload_bool(payload, "enable_llm", config.llm_enabled)
                 llm_provider = _optional_str(payload, "llm_provider") or config.llm_provider
                 llm_base_url = _optional_str(payload, "llm_base_url") or config.llm_base_url
@@ -145,6 +157,12 @@ class WebHandler(SimpleHTTPRequestHandler):
                 llm_allow_insecure_tls = _payload_bool(payload, "llm_allow_insecure_tls", config.llm_allow_insecure_tls)
                 llm_timeout_seconds = _payload_int(payload, "llm_timeout_seconds", config.llm_timeout_seconds)
                 run_target = _optional_str(payload, "run_target") or "draft"
+                approve_publish = _payload_bool(payload, "approve_publish", False)
+                publish_requires_approval = _payload_bool(
+                    payload,
+                    "publish_requires_approval",
+                    config.agent_publish_requires_approval,
+                )
                 publish_root = _optional_str(payload, "publish_root")
                 publish_name = _optional_str(payload, "publish_name")
                 result = api_start_agent_run(
@@ -154,8 +172,12 @@ class WebHandler(SimpleHTTPRequestHandler):
                     out_dir=Path(out_dir) if isinstance(out_dir, str) and out_dir else None,
                     skill_name=skill_name,
                     description=description if isinstance(description, str) else None,
+                    goal=goal,
+                    skill_id=skill_id,
                     review_min_score=review_min_score,
                     auto_prune=auto_prune,
+                    max_cycles=max_cycles,
+                    memory_db_path=memory_db_path,
                     enable_llm=enable_llm,
                     llm_provider=llm_provider,
                     llm_base_url=llm_base_url,
@@ -166,6 +188,8 @@ class WebHandler(SimpleHTTPRequestHandler):
                     llm_allow_insecure_tls=llm_allow_insecure_tls,
                     llm_timeout_seconds=llm_timeout_seconds,
                     run_target=run_target,
+                    approve_publish=approve_publish,
+                    publish_requires_approval=publish_requires_approval,
                     publish_root=Path(publish_root) if publish_root else None,
                     publish_name=publish_name,
                 )

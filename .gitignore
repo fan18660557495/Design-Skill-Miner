@@ -9,6 +9,7 @@ build/
 dist/
 .venv/
 .design-skill-miner.toml
+.design-skill-miner/
 .env
 .env.*
 *.log

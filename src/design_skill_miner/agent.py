@@ -5,11 +5,27 @@ import json
 from pathlib import Path
 import tempfile
 
+from .attribution import project_id_from_prefix
 from .draft_skill import write_skill_draft
 from .llm import LLMClient, LLMConfig, LLMError
+from .memory import AgentMemoryStore, ProjectMemoryProfile
+from .models import Insight
 from .pipeline import generate_insights
 from .report import write_reports
 from .review import ReviewReport, prune_low_signal_insights, review_insights
+from .skill_executor import apply_skill_strategy
+from .skill_router import SkillSelection, choose_skill_for_insights
+from .tool_policy import decide_next_action
+
+
+@dataclass(frozen=True)
+class AgentGoal:
+    title: str
+    success_criteria: list[str]
+    max_cycles: int
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @dataclass
@@ -18,6 +34,8 @@ class AgentSettings:
     review_min_confidence: float = 0.62
     review_min_evidence: int = 2
     auto_prune: bool = True
+    max_cycles: int = 3
+    memory_db_path: str | None = None
 
 
 @dataclass
@@ -36,7 +54,12 @@ class AgentRunResult:
     report_dir: Path
     stats: dict[str, int]
     review: ReviewReport
+    goal: AgentGoal
+    cycles_used: int
+    final_decision: str
+    memory_profile: dict | None = None
     plan: list[AgentStep] = field(default_factory=list)
+    selected_skill: dict | None = None
     llm_enabled: bool = False
     llm_status: str = "disabled"
     llm_error: str | None = None
@@ -48,12 +71,29 @@ class AgentRunResult:
             "report_dir": str(self.report_dir),
             "stats": self.stats,
             "review": self.review.to_dict(),
+            "goal": self.goal.to_dict(),
+            "cycles_used": self.cycles_used,
+            "final_decision": self.final_decision,
+            "memory_profile": self.memory_profile,
             "plan": [step.to_dict() for step in self.plan],
+            "selected_skill": self.selected_skill,
             "llm_enabled": self.llm_enabled,
             "llm_status": self.llm_status,
             "llm_error": self.llm_error,
             "files": self.files,
         }
+
+
+@dataclass
+class _CycleSnapshot:
+    insights: list[Insight]
+    stats: dict[str, int]
+    review: ReviewReport
+    skill_selection: SkillSelection
+    min_frequency: int
+    min_score: float
+    min_confidence: float
+    min_evidence: int
 
 
 def run_agent_mine(
@@ -64,103 +104,248 @@ def run_agent_mine(
     out_dir: Path | None = None,
     skill_name: str = "design-skill-draft",
     description: str | None = None,
+    goal: str | None = None,
+    skill_id: str | None = None,
     agent_settings: AgentSettings | None = None,
     llm_config: LLMConfig | None = None,
 ) -> AgentRunResult:
     settings = agent_settings or AgentSettings()
     llm = LLMClient(llm_config or LLMConfig())
     plan: list[AgentStep] = []
-    effective_min_frequency = min_frequency
-    baseline_insights = []
-    baseline_stats: dict[str, int] = {}
-    baseline_review: ReviewReport | None = None
+    current_min_frequency = max(min_frequency, 1)
+    current_skill_override = skill_id
+    final_decision = "finish"
+    cycles_used = 0
 
-    plan.append(AgentStep("collect_insights", "in_progress", f"min_frequency={effective_min_frequency}"))
-    insights, stats = generate_insights(
-        sessions_root,
-        cwd_prefix=cwd_prefix,
-        min_frequency=effective_min_frequency,
+    resolved_goal = AgentGoal(
+        title=goal or _default_goal(cwd_prefix),
+        success_criteria=[
+            f"审校分不低于 {settings.review_min_score:.2f}",
+            "输出至少 1 个可编辑草稿文件",
+            "低质量候选在进入草稿前被识别并处理",
+        ],
+        max_cycles=max(settings.max_cycles, 1),
     )
-    baseline_insights = list(insights)
-    baseline_stats = dict(stats)
-    plan[-1].status = "completed"
-    plan[-1].details = f"generated={len(insights)}"
+    plan.append(AgentStep("goal_init", "completed", resolved_goal.title))
 
-    plan.append(AgentStep("review_insights", "in_progress", "run deterministic quality checks"))
-    review = review_insights(
-        insights,
-        min_confidence=settings.review_min_confidence,
-        min_evidence=settings.review_min_evidence,
-    )
-    baseline_review = review
-    plan[-1].status = "completed"
-    plan[-1].details = f"score={review.score}"
-
-    if review.score < settings.review_min_score and effective_min_frequency < settings.review_min_evidence:
-        effective_min_frequency = settings.review_min_evidence
+    project_id = project_id_from_prefix(cwd_prefix) if cwd_prefix else "global"
+    memory_store: AgentMemoryStore | None = None
+    memory_profile: ProjectMemoryProfile | None = None
+    try:
+        memory_store = AgentMemoryStore(_resolve_memory_db_path(settings.memory_db_path))
+        memory_profile = memory_store.load_project_profile(project_id)
         plan.append(
             AgentStep(
-                "replan_threshold",
+                "load_memory",
                 "completed",
-                f"review score below threshold, rerun with min_frequency={effective_min_frequency}",
+                (
+                    f"project={project_id}, runs={memory_profile.total_runs}, "
+                    f"preferred_skill={memory_profile.preferred_skill_id or 'none'}"
+                ),
             )
         )
-        plan.append(AgentStep("collect_insights", "in_progress", f"min_frequency={effective_min_frequency}"))
+    except Exception as exc:  # noqa: BLE001
+        plan.append(AgentStep("load_memory", "completed", f"memory unavailable: {exc}"))
+
+    if memory_profile:
+        if memory_profile.suggested_min_frequency and current_min_frequency < memory_profile.suggested_min_frequency:
+            current_min_frequency = memory_profile.suggested_min_frequency
+            plan.append(
+                AgentStep(
+                    "apply_memory_hint",
+                    "completed",
+                    f"min_frequency adjusted to {current_min_frequency}",
+                )
+            )
+        if not skill_id and memory_profile.preferred_skill_id:
+            current_skill_override = memory_profile.preferred_skill_id
+            plan.append(
+                AgentStep(
+                    "apply_memory_hint",
+                    "completed",
+                    f"skill switched to {current_skill_override} from memory",
+                )
+            )
+
+    blocked_titles = set(memory_profile.blocked_titles) if memory_profile else set()
+    best_snapshot: _CycleSnapshot | None = None
+    last_snapshot: _CycleSnapshot | None = None
+
+    for cycle_index in range(resolved_goal.max_cycles):
+        cycles_used = cycle_index + 1
+        plan.append(
+            AgentStep(
+                "cycle_start",
+                "completed",
+                f"cycle={cycles_used}/{resolved_goal.max_cycles}, min_frequency={current_min_frequency}",
+            )
+        )
+
+        plan.append(AgentStep("collect_insights", "in_progress", f"min_frequency={current_min_frequency}"))
         insights, stats = generate_insights(
             sessions_root,
             cwd_prefix=cwd_prefix,
-            min_frequency=effective_min_frequency,
+            min_frequency=current_min_frequency,
         )
         plan[-1].status = "completed"
         plan[-1].details = f"generated={len(insights)}"
 
-        plan.append(AgentStep("review_insights", "in_progress", "re-run quality checks after replanning"))
-        review = review_insights(
-            insights,
-            min_confidence=settings.review_min_confidence,
-            min_evidence=settings.review_min_evidence,
-        )
-        plan[-1].status = "completed"
-        plan[-1].details = f"score={review.score}"
-
-        if not insights and baseline_insights:
-            insights = baseline_insights
-            stats = baseline_stats
-            review = baseline_review
-            plan.append(
-                AgentStep(
-                    "rollback_replan",
-                    "completed",
-                    "stricter threshold removed all insights, reverted to baseline result",
+        if blocked_titles and insights:
+            before = len(insights)
+            insights = [item for item in insights if item.title not in blocked_titles]
+            if len(insights) != before:
+                stats = dict(stats)
+                stats["insights_written"] = len(insights)
+                plan.append(
+                    AgentStep(
+                        "memory_filter",
+                        "completed",
+                        f"dropped={before - len(insights)} previously rejected titles",
+                    )
                 )
-            )
 
-    if settings.auto_prune and insights:
-        plan.append(AgentStep("auto_prune", "in_progress", "drop low-signal insights and dedupe rules"))
-        original_insights = list(insights)
-        pruned_insights, actions = prune_low_signal_insights(
-            insights,
-            review,
-            min_confidence=settings.review_min_confidence,
-            min_evidence=settings.review_min_evidence,
-        )
-        if pruned_insights:
-            insights = pruned_insights
-            review = review_insights(
-                insights,
-                min_confidence=settings.review_min_confidence,
-                min_evidence=settings.review_min_evidence,
+        plan.append(AgentStep("choose_skill", "in_progress", "select the most suitable skill strategy"))
+        skill_selection = choose_skill_for_insights(insights, explicit_skill_id=current_skill_override)
+        plan[-1].status = "completed"
+        plan[-1].details = f"{skill_selection.skill.skill_id} - {skill_selection.reason}"
+
+        effective_min_score = skill_selection.skill.review_min_score or settings.review_min_score
+        effective_min_confidence = skill_selection.skill.review_min_confidence or settings.review_min_confidence
+        effective_min_evidence = skill_selection.skill.review_min_evidence or settings.review_min_evidence
+
+        if not insights:
+            review = ReviewReport(
+                score=0.0,
+                findings=[],
+                approved_titles=[],
+                rejected_titles=[],
+                recommendations=["当前没有候选规则，建议扩大样本或提高重复信号。"],
+                auto_actions=["collect_more_evidence"],
+                reason_counts={"insufficient_evidence": 1},
+                primary_reason="insufficient_evidence",
             )
         else:
-            insights = original_insights
-            actions.append("keep_original:no_survivors_after_prune")
-        review = review_insights(
-            insights,
+            plan.append(AgentStep("review_insights", "in_progress", "run deterministic quality checks"))
+            review = review_insights(
+                insights,
+                min_confidence=effective_min_confidence,
+                min_evidence=effective_min_evidence,
+            )
+            plan[-1].status = "completed"
+            plan[-1].details = f"score={review.score}, primary_reason={review.primary_reason or 'none'}"
+
+            if settings.auto_prune:
+                plan.append(AgentStep("auto_prune", "in_progress", "drop low-signal insights and dedupe rules"))
+                original_insights = list(insights)
+                pruned_insights, actions = prune_low_signal_insights(
+                    insights,
+                    review,
+                    min_confidence=effective_min_confidence,
+                    min_evidence=effective_min_evidence,
+                )
+                if pruned_insights:
+                    insights = pruned_insights
+                else:
+                    insights = original_insights
+                    actions.append("keep_original:no_survivors_after_prune")
+                review = review_insights(
+                    insights,
+                    min_confidence=effective_min_confidence,
+                    min_evidence=effective_min_evidence,
+                )
+                plan[-1].status = "completed"
+                plan[-1].details = ", ".join(actions) if actions else "no changes"
+
+        snapshot = _CycleSnapshot(
+            insights=_clone_insights(insights),
+            stats=dict(stats),
+            review=review,
+            skill_selection=skill_selection,
+            min_frequency=current_min_frequency,
+            min_score=effective_min_score,
+            min_confidence=effective_min_confidence,
+            min_evidence=effective_min_evidence,
+        )
+        last_snapshot = snapshot
+        if best_snapshot is None or snapshot.review.score > best_snapshot.review.score:
+            best_snapshot = snapshot
+
+        decision = decide_next_action(
+            cycle_index=cycle_index,
+            max_cycles=resolved_goal.max_cycles,
+            review=review,
+            has_insights=bool(insights),
+            min_score=effective_min_score,
+            current_min_frequency=current_min_frequency,
+            current_skill_id=skill_selection.skill.skill_id,
+            category_scores=skill_selection.category_scores,
+            explicit_skill_id=skill_id,
+        )
+        final_decision = decision.action
+        plan.append(
+            AgentStep(
+                "tool_policy",
+                "completed",
+                f"{decision.action}: {decision.reason}",
+            )
+        )
+
+        if decision.action == "collect_more_evidence":
+            current_min_frequency = decision.next_min_frequency or (current_min_frequency + 1)
+            continue
+        if decision.action == "switch_skill":
+            current_skill_override = decision.next_skill_id or current_skill_override
+            continue
+        break
+
+    final_snapshot = last_snapshot or best_snapshot
+    if final_snapshot is None:
+        final_snapshot = _CycleSnapshot(
+            insights=[],
+            stats={"sessions_scanned": 0, "candidate_messages": 0, "insights_written": 0},
+            review=ReviewReport(
+                score=0.0,
+                findings=[],
+                approved_titles=[],
+                rejected_titles=[],
+                recommendations=["当前没有候选规则。"],
+                auto_actions=[],
+                reason_counts={"insufficient_evidence": 1},
+                primary_reason="insufficient_evidence",
+            ),
+            skill_selection=choose_skill_for_insights([], explicit_skill_id=current_skill_override),
+            min_frequency=current_min_frequency,
+            min_score=settings.review_min_score,
             min_confidence=settings.review_min_confidence,
             min_evidence=settings.review_min_evidence,
         )
-        plan[-1].status = "completed"
-        plan[-1].details = ", ".join(actions) if actions else "no changes"
+
+    if not final_snapshot.insights and best_snapshot and best_snapshot.insights:
+        final_snapshot = best_snapshot
+        plan.append(
+            AgentStep(
+                "rollback_best_cycle",
+                "completed",
+                "latest cycle has no surviving insights, fallback to best previous cycle.",
+            )
+        )
+
+    plan.append(AgentStep("apply_skill_strategy", "in_progress", "reorder insights and shape draft focus"))
+    skill_execution = apply_skill_strategy(
+        final_snapshot.insights,
+        final_snapshot.skill_selection,
+        skill_name=skill_name,
+        description=description,
+    )
+    insights = skill_execution.insights
+    description = skill_execution.generated_description
+    review = review_insights(
+        insights,
+        min_confidence=final_snapshot.min_confidence,
+        min_evidence=final_snapshot.min_evidence,
+    ) if insights else final_snapshot.review
+    plan[-1].status = "completed"
+    plan[-1].details = f"focus={','.join(skill_execution.available_categories) or 'general'}"
 
     llm_enabled = bool(llm_config and llm_config.enabled)
     llm_status = "disabled"
@@ -171,11 +356,15 @@ def run_agent_mine(
             insights, partial_failures = llm.enhance_insights(insights)
             review = review_insights(
                 insights,
-                min_confidence=settings.review_min_confidence,
-                min_evidence=settings.review_min_evidence,
+                min_confidence=final_snapshot.min_confidence,
+                min_evidence=final_snapshot.min_evidence,
             )
             llm_status = "completed_with_fallbacks" if partial_failures else "completed"
-            llm_error = f"{partial_failures} insight requests timed out or failed; kept deterministic version." if partial_failures else None
+            llm_error = (
+                f"{partial_failures} insight requests timed out or failed; kept deterministic version."
+                if partial_failures
+                else None
+            )
             plan[-1].status = "completed"
             plan[-1].details = f"enhanced={len(insights)}, partial_failures={partial_failures}"
         except LLMError as exc:
@@ -201,14 +390,45 @@ def run_agent_mine(
         draft_dir,
         skill_name=skill_name,
         description=description,
+        applied_skill=final_snapshot.skill_selection.skill,
+        ordered_categories=skill_execution.available_categories,
     )
+
+    if memory_store:
+        try:
+            memory_store.record_run(
+                project_id=project_id,
+                goal=resolved_goal.title,
+                skill_id=final_snapshot.skill_selection.skill.skill_id,
+                review_score=review.score,
+                min_frequency=final_snapshot.min_frequency,
+                reason_codes=list(review.reason_counts.keys()),
+                approved_titles=review.approved_titles,
+                rejected_titles=review.rejected_titles,
+            )
+            latest_profile = memory_store.load_project_profile(project_id)
+            memory_profile = latest_profile
+            plan.append(
+                AgentStep(
+                    "write_memory",
+                    "completed",
+                    f"stored run history, total_runs={latest_profile.total_runs}",
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            plan.append(AgentStep("write_memory", "completed", f"memory write skipped: {exc}"))
 
     result = AgentRunResult(
         draft_dir=draft_dir,
         report_dir=report_dir,
-        stats=stats,
+        stats=final_snapshot.stats,
         review=review,
+        goal=resolved_goal,
+        cycles_used=cycles_used,
+        final_decision=final_decision,
+        memory_profile=memory_profile.to_dict() if memory_profile else None,
         plan=plan,
+        selected_skill=final_snapshot.skill_selection.to_dict(),
         llm_enabled=llm_enabled,
         llm_status=llm_status,
         llm_error=llm_error,
@@ -225,3 +445,20 @@ def run_agent_mine(
     run_path.write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     result.files["run_json"] = str(run_path)
     return result
+
+
+def _clone_insights(insights: list[Insight]) -> list[Insight]:
+    return [Insight.from_dict(item.to_dict()) for item in insights]
+
+
+def _resolve_memory_db_path(configured: str | None) -> Path:
+    if configured:
+        return Path(configured)
+    return Path.cwd() / ".design-skill-miner" / "memory.db"
+
+
+def _default_goal(cwd_prefix: str | None) -> str:
+    if not cwd_prefix:
+        return "从历史会话中沉淀可复用的设计规则草稿。"
+    project = Path(cwd_prefix).name or cwd_prefix
+    return f"为项目 {project} 沉淀可复用且可发布前复核的设计规则草稿。"

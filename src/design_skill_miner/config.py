@@ -13,6 +13,9 @@ class MinerConfig:
     output_dir: str | None = None
     agent_review_min_score: float = 0.6
     agent_auto_prune: bool = True
+    agent_max_cycles: int = 3
+    agent_memory_db_path: str | None = None
+    agent_publish_requires_approval: bool = True
     llm_enabled: bool = False
     llm_provider: str = "openai-compatible"
     llm_base_url: str | None = None
@@ -46,6 +49,9 @@ def load_config(config_path: Path | None) -> MinerConfig:
         output_dir=_as_str(miner.get("output_dir")),
         agent_review_min_score=_as_float(agent.get("review_min_score"), default=0.6),
         agent_auto_prune=_as_bool(agent.get("auto_prune"), default=True),
+        agent_max_cycles=_as_int(agent.get("max_cycles"), default=3),
+        agent_memory_db_path=_as_str(agent.get("memory_db_path")),
+        agent_publish_requires_approval=_as_bool(agent.get("publish_requires_approval"), default=True),
         llm_enabled=_as_bool(llm.get("enabled"), default=False),
         llm_provider=_as_str(llm.get("provider")) or "openai-compatible",
         llm_base_url=_as_str(llm.get("base_url")),

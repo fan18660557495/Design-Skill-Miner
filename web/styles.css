@@ -340,6 +340,11 @@ textarea {
   padding: 2px 2px 0;
 }
 
+.compact-field {
+  width: fit-content;
+  min-width: 220px;
+}
+
 .toggle-row input,
 .checkbox-card input {
   width: auto;

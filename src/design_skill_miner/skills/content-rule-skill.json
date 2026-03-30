@@ -1,0 +1,34 @@
+{
+  "skill_id": "content-rule-skill",
+  "name": "表达与反馈沉淀 Skill",
+  "description": "用于整理反馈文案、提示语、命名方式和交互反馈表达规则。",
+  "when_to_use": [
+    "当重复讨论更多集中在文案、提示语、反馈表达和交互说明时使用",
+    "当你想先沉淀表达层默认做法时使用"
+  ],
+  "focus_categories": [
+    "content-rules",
+    "interaction-patterns"
+  ],
+  "preferred_output_categories": [
+    "content-rules",
+    "interaction-patterns",
+    "principles"
+  ],
+  "review_min_score": 0.58,
+  "review_min_confidence": 0.57,
+  "review_min_evidence": 2,
+  "review_focus": [
+    "优先看表达是否清楚统一",
+    "优先看反馈是否真正服务当前任务"
+  ],
+  "draft_intro": "这个 skill 更适合沉淀文案口径、反馈方式和表达层默认做法。",
+  "reading_guidance": [
+    "先看表达规范，再看交互反馈，最后再回到总原则",
+    "优先确认哪些文案和反馈口径已经跨场景复用"
+  ],
+  "usage_boundaries": [
+    "如果讨论主要是视觉层问题，不要强行归到表达规范里",
+    "如果某条文案只适用于单个活动或单个业务阶段，先不要沉淀成长期规则"
+  ]
+}

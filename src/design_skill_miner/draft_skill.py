@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .models import Insight
+from .skill_registry import SkillDefinition
 
 
 CATEGORY_FILES = {
@@ -27,6 +28,8 @@ def write_skill_draft(
     *,
     skill_name: str,
     description: str | None = None,
+    applied_skill: SkillDefinition | None = None,
+    ordered_categories: list[str] | None = None,
 ) -> dict[str, Path]:
     refs_dir = out_dir / "references"
     refs_dir.mkdir(parents=True, exist_ok=True)
@@ -45,11 +48,13 @@ def write_skill_draft(
         outputs[category] = path
 
     skill_path = out_dir / "SKILL.md"
+    category_order = ordered_categories or [category for category in CATEGORY_FILES if category in grouped]
     skill_path.write_text(
         render_skill_entry(
             skill_name=skill_name,
             description=description or default_description(skill_name),
-            available_categories=[category for category in CATEGORY_FILES if category in grouped],
+            available_categories=category_order,
+            applied_skill=applied_skill,
         ),
         encoding="utf-8",
     )
@@ -61,8 +66,9 @@ def write_skill_draft(
             {
                 "skill_name": skill_name,
                 "description": description or default_description(skill_name),
-                "categories": [category for category in CATEGORY_FILES if category in grouped],
+                "categories": category_order,
                 "insight_count": len(insights),
+                "applied_skill": applied_skill.to_dict() if applied_skill else None,
             },
             ensure_ascii=False,
             indent=2,
@@ -81,7 +87,13 @@ def default_description(skill_name: str) -> str:
     )
 
 
-def render_skill_entry(skill_name: str, description: str, available_categories: list[str]) -> str:
+def render_skill_entry(
+    skill_name: str,
+    description: str,
+    available_categories: list[str],
+    *,
+    applied_skill: SkillDefinition | None = None,
+) -> str:
     labels = {
         "principles": "整体设计原则",
         "page-patterns": "页面模式",
@@ -101,15 +113,53 @@ def render_skill_entry(skill_name: str, description: str, available_categories: 
         "",
         "这个 skill 草稿由历史设计对话自动提炼生成，适合先作为候选规范，再由人工审核后定稿。",
         "",
-        "## 推荐读取顺序",
-        "",
-        "- 先读与当前任务最接近的分类文件，不要一次性加载全部内容。",
-        "- 先看规则总览，再看候选条目，最后按需查看证据附录。",
-        "- 把这里的规则当成候选默认做法，人工确认后再进入正式 skill。",
-        "",
-        "## 读取路径",
-        "",
     ]
+
+    if applied_skill:
+        lines.extend(
+            [
+                "## 本次使用的沉淀 Skill",
+                "",
+                f"- 名称：{applied_skill.name}",
+                f"- 作用：{applied_skill.description}",
+            ]
+        )
+        for item in applied_skill.when_to_use:
+            lines.append(f"- 适用场景：{item}")
+        lines.extend(
+            [
+                "",
+                applied_skill.draft_intro,
+                "",
+            ]
+        )
+
+    reading_guidance = applied_skill.reading_guidance if applied_skill and applied_skill.reading_guidance else [
+        "先读与当前任务最接近的分类文件，不要一次性加载全部内容。",
+        "先看规则总览，再看候选条目，最后按需查看证据附录。",
+        "把这里的规则当成候选默认做法，人工确认后再进入正式 skill。",
+    ]
+    usage_boundaries = applied_skill.usage_boundaries if applied_skill and applied_skill.usage_boundaries else [
+        "当前内容来自对话提炼，可能包含项目语境，需要人工复核。",
+        "如果同一主题仍在争论，不要直接写入正式 skill。",
+        "若某条规则只适用于单个项目，应移动到项目专属 skill，而不是通用 skill。",
+    ]
+
+    lines.extend(
+        [
+            "## 推荐读取顺序",
+            "",
+        ]
+    )
+    for item in reading_guidance:
+        lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "## 读取路径",
+            "",
+        ]
+    )
 
     for category in available_categories:
         filename = CATEGORY_FILES[category]
@@ -120,12 +170,11 @@ def render_skill_entry(skill_name: str, description: str, available_categories: 
             "",
             "## 使用边界",
             "",
-            "- 当前内容来自对话提炼，可能包含项目语境，需要人工复核。",
-            "- 如果同一主题仍在争论，不要直接写入正式 skill。",
-            "- 若某条规则只适用于单个项目，应移动到项目专属 skill，而不是通用 skill。",
-            "",
         ]
     )
+    for item in usage_boundaries:
+        lines.append(f"- {item}")
+    lines.append("")
     return "\n".join(lines)
 
 

@@ -76,7 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     agent_mine.add_argument("--out", type=Path, default=Path("./agent-out"))
     agent_mine.add_argument("--skill-name", default="design-skill-draft")
     agent_mine.add_argument("--description", default=None)
+    agent_mine.add_argument("--goal", default=None)
+    agent_mine.add_argument("--skill-id", default=None)
     agent_mine.add_argument("--review-min-score", type=float, default=None)
+    agent_mine.add_argument("--max-cycles", type=int, default=None)
+    agent_mine.add_argument("--memory-db-path", default=None)
     agent_mine.add_argument("--disable-auto-prune", action="store_true")
     agent_mine.add_argument("--enable-llm", action="store_true")
     agent_mine.add_argument("--llm-provider", default=None)
@@ -169,6 +173,8 @@ def run_agent_workflow(args: argparse.Namespace, config: MinerConfig) -> int:
     agent_settings = AgentSettings(
         review_min_score=args.review_min_score or config.agent_review_min_score,
         auto_prune=not args.disable_auto_prune if args.disable_auto_prune else config.agent_auto_prune,
+        max_cycles=args.max_cycles or config.agent_max_cycles,
+        memory_db_path=args.memory_db_path or config.agent_memory_db_path,
     )
     llm_config = LLMConfig(
         enabled=args.enable_llm or config.llm_enabled,
@@ -188,13 +194,19 @@ def run_agent_workflow(args: argparse.Namespace, config: MinerConfig) -> int:
         out_dir=out_dir,
         skill_name=args.skill_name,
         description=args.description,
+        goal=args.goal,
+        skill_id=args.skill_id,
         agent_settings=agent_settings,
         llm_config=llm_config,
     )
     print_stats(result.stats)
     print(f"Review score: {result.review.score}")
+    print(f"Cycles used: {result.cycles_used}/{result.goal.max_cycles}")
+    print(f"Final decision: {result.final_decision}")
     print(f"Approved insights: {len(result.review.approved_titles)}")
     print(f"Rejected insights: {len(result.review.rejected_titles)}")
+    if result.selected_skill:
+        print(f"Selected skill: {result.selected_skill['skill']['skill_id']}")
     print(f"Draft dir: {result.draft_dir}")
     print(f"Report dir: {result.report_dir}")
     print(f"Run metadata: {result.files['run_json']}")

@@ -31,5 +31,8 @@ design-skill-miner = "design_skill_miner.cli:main"
 [tool.setuptools]
 package-dir = { "" = "src" }
 
+[tool.setuptools.package-data]
+design_skill_miner = ["skills/*.json"]
+
 [tool.setuptools.packages.find]
 where = ["src"]

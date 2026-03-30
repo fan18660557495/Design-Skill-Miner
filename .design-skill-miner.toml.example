@@ -7,6 +7,9 @@ output_dir = "./out"
 [agent]
 review_min_score = 0.6
 auto_prune = true
+max_cycles = 3
+memory_db_path = ".design-skill-miner/memory.db"
+publish_requires_approval = true
 
 [llm]
 enabled = false

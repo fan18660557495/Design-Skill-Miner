@@ -4,6 +4,7 @@ const state = {
   currentStep: "project",
   selectedProject: "",
   currentProjectInfo: null,
+  selectedSkill: null,
   activeRunId: "",
   runStatus: null,
   insights: [],
@@ -27,6 +28,7 @@ const els = {
   runStatusCard: document.getElementById("runStatusCard"),
   cwdPrefixInput: document.getElementById("cwdPrefixInput"),
   chooseProjectBtn: document.getElementById("chooseProjectBtn"),
+  skillIdInput: document.getElementById("skillIdInput"),
   projectSummary: document.getElementById("projectSummary"),
   projectMeta: document.getElementById("projectMeta"),
   projectNextBtn: document.getElementById("projectNextBtn"),
@@ -111,6 +113,10 @@ function getPublishRoot() {
   return els.publishRootInput.value.trim() || state.publishRoot || "";
 }
 
+function getSkillId() {
+  return els.skillIdInput.value.trim();
+}
+
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
   if (!response.ok) {
@@ -157,6 +163,7 @@ function setCurrentStep(step) {
 
 function resetForProjectChange() {
   state.currentProjectInfo = null;
+  state.selectedSkill = null;
   state.activeRunId = "";
   state.runStatus = null;
   state.insights = [];
@@ -306,10 +313,11 @@ function renderProjectStage() {
   }
 
   const info = state.currentProjectInfo;
+  const selectedSkillText = getSkillId() ? `· 指定 ${skillLabel(getSkillId())}` : "· 自动选择 skill";
   els.projectSummary.className = "summary-card";
   els.projectSummary.innerHTML = `
     <strong>${escapeHtml(info?.project_id || slugifyProject(state.selectedProject))}</strong>
-    <span class="muted">${escapeHtml(String(info?.session_count || 0))} 个 session</span>
+    <span class="muted">${escapeHtml(String(info?.session_count || 0))} 个 session ${escapeHtml(selectedSkillText)}</span>
   `;
   els.projectNextBtn.disabled = state.runStatus?.status === "running";
   els.projectNextBtn.textContent = state.runStatus?.status === "running" ? "智能体运行中…" : "启动智能体";
@@ -362,10 +370,13 @@ function renderReviewSummary() {
   const review = state.reviewReport;
   const toneClass = review.score >= 0.75 ? "" : " is-warning";
   const llmText = state.llmRunInfo?.llm_enabled ? ` · LLM ${state.llmRunInfo.llm_status}` : "";
+  const skillText = state.selectedSkill?.skill?.skill_id
+    ? ` · 使用 ${skillLabel(state.selectedSkill.skill.skill_id)}`
+    : "";
   els.reviewSummary.className = `summary-card${toneClass}`;
   els.reviewSummary.innerHTML = `
     <strong>审校分 ${escapeHtml(String(review.score))}</strong>
-    <span class="muted">通过 ${escapeHtml(String((review.approved_titles || []).length))} 条 · 拒绝 ${escapeHtml(String((review.rejected_titles || []).length))} 条${escapeHtml(llmText)}</span>
+    <span class="muted">通过 ${escapeHtml(String((review.approved_titles || []).length))} 条 · 拒绝 ${escapeHtml(String((review.rejected_titles || []).length))} 条${escapeHtml(llmText)}${escapeHtml(skillText)}</span>
   `;
 }
 
@@ -787,6 +798,14 @@ function categoryLabel(value) {
   }[value] || value;
 }
 
+function skillLabel(value) {
+  return {
+    "page-pattern-skill": "页面规范",
+    "component-pattern-skill": "组件规范",
+    "content-rule-skill": "表达规范",
+  }[value] || value || "自动选择";
+}
+
 function stabilityLabel(value) {
   return {
     stable: "稳定",
@@ -889,6 +908,7 @@ async function startAgentRun() {
       min_frequency: getMinFrequency(),
       out_dir: getDraftOutDir() || undefined,
       skill_name: getSkillName(),
+      skill_id: getSkillId() || undefined,
       run_target: getRunTarget(),
       publish_name: getSkillName(),
       enable_llm: getEnableLlm(),
@@ -909,6 +929,7 @@ function applyRunResult(result) {
   state.insightsStats = result.stats || null;
   state.reviewReport = result.review || null;
   state.agentPlan = result.plan || [];
+  state.selectedSkill = result.selected_skill || null;
   state.llmRunInfo = {
     llm_enabled: result.llm_enabled,
     llm_status: result.llm_status,
@@ -1089,13 +1110,16 @@ function handleClick(event) {
 
 function loadPreferences() {
   const savedPublishRoot = localStorage.getItem("designSkillMiner.publishRoot") || "";
+  const savedSkillId = localStorage.getItem("designSkillMiner.skillId") || "";
   state.publishRoot = savedPublishRoot;
   els.publishRootInput.value = savedPublishRoot;
+  els.skillIdInput.value = savedSkillId;
   els.enableLlmInput.checked = localStorage.getItem("designSkillMiner.enableLlm") === "true";
 }
 
 function persistSettings() {
   localStorage.setItem("designSkillMiner.enableLlm", String(getEnableLlm()));
+  localStorage.setItem("designSkillMiner.skillId", getSkillId());
 }
 
 function escapeHtml(value) {
